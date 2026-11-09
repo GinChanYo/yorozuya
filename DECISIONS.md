@@ -26,9 +26,7 @@ Motivation: Namida met all needs, but updated rarely and some features broke. Wa
 
 yt-dlp updates from within the app via `updateYoutubeDL()`. The extractor is fixed without rebuilding the APK — critical for a solo project.
 
-### m4a instead of mp3
-
-YouTube delivers opus/m4a. Converting to mp3 means transcoding with quality loss just for the format. Android plays m4a natively.
+### Try really hard to use mp3 format by default, and add support to other formats later
 
 ### Intent ACTION_SEND instead of built-in WebView
 
