@@ -26,8 +26,7 @@ Motivation: Namida met all needs, but updated rarely and some features broke. Wa
 
 yt-dlp updates from within the app via `updateYoutubeDL()`. The extractor is fixed without rebuilding the APK — critical for a solo project.
 
-### Try really hard to use mp3 format by default, and add support to other formats later
-
+### Keep file in original format without redecoding it, locally every format will be played. Converting to mp3 will be added as a feature "share as mp3" if necessary. 
 ### Intent ACTION_SEND instead of built-in WebView
 
 Receiving links from other apps is handled by an intent filter in the manifest. In-app search uses `ytsearch20:` in yt-dlp, and data comes structured. WebView would provide an HTML page that would need scraping and would break with every YouTube redesign.
