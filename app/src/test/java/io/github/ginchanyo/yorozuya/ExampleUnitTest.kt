@@ -1,4 +1,4 @@
-package com.example.yorozuya
+package io.github.ginchanyo.yorozuya
 
 import org.junit.Test
 

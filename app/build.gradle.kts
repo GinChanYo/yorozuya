@@ -4,13 +4,13 @@ plugins {
 }
 
 android {
-    namespace = "com.example.yorozuya"
+    namespace = "io.github.ginchanyo.yorozuya"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.example.yorozuya"
+        applicationId = "io.github.ginchanyo.yorozuya"
         minSdk = 24
         targetSdk = 37
         versionCode = 1
