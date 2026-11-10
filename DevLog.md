@@ -82,3 +82,57 @@ The template `Greeting` was replaced by real screens:
 - Unused imports `Log` and `Preview` are left in `MainActivity.kt`.
 - If the user denies permission, there's no way to ask again from the UI yet (e.g. a "Grant access" button).
 - Next per 0.1 scope: playback with Media3, background service with notification, queue, shuffle.
+
+---
+
+## 2026-11-10 (later) — Playback on tap with ExoPlayer
+
+### Added: Media3 ExoPlayer dependency
+- `gradle/libs.versions.toml`: version `media3 = "1.11.0"`, library `androidx-media3-exoplayer`.
+- `app/build.gradle.kts`: `implementation(libs.androidx.media3.exoplayer)`.
+- In the version catalog, dashes in the alias become dots in Gradle code: `androidx-media3-exoplayer` → `libs.androidx.media3.exoplayer`.
+
+### Changed: `MainActivity.kt`, tap a track to play / pause it
+
+**New state in `TrackScreen`:**
+- `val player = remember { ExoPlayer.Builder(context).build() }` creates the player once. `remember` keeps the same instance across recompositions, so a new player isn't built on every redraw.
+- `var currentTrackId by remember { mutableStateOf<Long?>(null) }` is the id of the loaded track, or `null` if nothing has been played yet.
+- `var isPlaying by remember { mutableStateOf(false) }` mirrors the player's play/pause state for the UI.
+
+**`DisposableEffect(player)`, the sibling of `LaunchedEffect` with cleanup:**
+- The body runs once and registers a `Player.Listener`. Its `onIsPlayingChanged(playing)` writes into `isPlaying`, so the UI updates whenever the player starts, pauses or finishes.
+- `object : Player.Listener { override fun ... }` is an *object expression*: an anonymous class implementing an interface, like an anonymous class in Java or an inline interface implementation in C#.
+- The `onDispose { }` block runs when the screen leaves composition. It removes the listener and calls `player.release()`. The player holds an audio decoder, which is a limited system resource. Without releasing it, sound keeps playing after the screen closes and the decoders eventually run out (a leak). Rule: anything that must be closed is closed in `DisposableEffect`.
+
+**Click logic (`onTrackClick` passed to `TrackList`):**
+```kotlin
+if (track.id == currentTrackId) {
+    if (player.isPlaying) player.pause() else player.play()   // same track: toggle
+} else {
+    player.setMediaItem(MediaItem.fromUri(track.uri))          // new track
+    player.prepare()
+    player.play()
+    currentTrackId = track.id
+}
+```
+- `MediaItem.fromUri(track.uri)` hands the player the content Uri from MediaStore. ExoPlayer reads it through the ContentResolver, so the permission check still applies.
+- `prepare()` makes the player start loading and decoding. `play()` starts as soon as it's ready.
+- **Bug fixed during development:** `currentTrackId = track.id` was missing at first. The id stayed `null`, so the comparison was always `false`: a second tap restarted the song instead of pausing it, and the highlight never appeared. Lesson: the player's internal state and the Compose state are separate. The UI only knows what you put into state yourself.
+
+**State hoisting (passing state down, events up):**
+- `TrackScreen` owns the state and the player. `TrackList` and `TrackRow` only receive values (`currentTrackId`, `isPlaying`) and a callback (`onTrackClick: (Track) -> Unit`, a function type: takes a `Track`, returns nothing).
+- `TrackList` turns it into a per-row `onClick = { onTrackClick(track) }` and computes `isCurrent = track.id == currentTrackId`.
+
+**`TrackRow` visuals:**
+- `Modifier.fillMaxWidth().clickable(onClick).padding(...)`. Modifier order matters: `clickable` is placed before `padding`, so the whole row including the padding is tappable.
+- The current track's title uses `MaterialTheme.colorScheme.primary`, the others `onSurface`.
+- The title gets a `▶ ` prefix while the current track is playing.
+
+**Flow:** tap a row → `onTrackClick(track)` → new track: set item, prepare, play, `currentTrackId` updated / same track: pause or resume → the player fires `onIsPlayingChanged` → `isPlaying` updated → recomposition → highlight and ▶ redrawn.
+
+### Known issues / next steps
+- **Tapping a track that finished playing does nothing.** After the end, the player is in `STATE_ENDED`, and `play()` doesn't restart from the beginning. Fix: `player.seekTo(0)` before `play()` when `player.playbackState == Player.STATE_ENDED`.
+- **Rotating the screen stops playback.** Rotation recreates the Activity, `onDispose` releases the player, and `remember` state (`tracks`, `currentTrackId`) is lost. This is solved properly by moving the player into a Media3 `MediaSessionService`, which is also what background playback needs.
+- No background playback or notification yet: playback is tied to the screen.
+- From before: `loadTracks` still runs on the main thread, and the unused imports `Log` and `Preview` are still there.
+- Next per 0.1 scope: background service with notification (`MediaSessionService`), queue, shuffle.
