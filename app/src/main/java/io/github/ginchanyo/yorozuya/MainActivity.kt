@@ -1,6 +1,7 @@
 package io.github.ginchanyo.yorozuya
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -16,6 +17,9 @@ import io.github.ginchanyo.yorozuya.ui.theme.YorozuyaTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val tracks = loadTracks(this)
+        Log.d("Yorozuya", "Tracks found: ${tracks.size}")
+        tracks.take(5).forEach { Log.d("Yorozuya", it.toString()) }
         enableEdgeToEdge()
         setContent {
             YorozuyaTheme {

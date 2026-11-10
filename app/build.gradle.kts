@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "io.github.ginchanyo.yorozuya"
-        minSdk = 24
+        minSdk = 33
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
