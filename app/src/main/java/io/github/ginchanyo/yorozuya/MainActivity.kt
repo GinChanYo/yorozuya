@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +63,8 @@ fun TrackScreen(modifier: Modifier = Modifier){
     val player = remember { ExoPlayer.Builder(context).build() }
     var currentTrackId by remember {mutableStateOf<Long?>(null)}
     var isPlaying by remember {mutableStateOf(false)}
+    var shuffleEnabled  by remember {mutableStateOf(false)}
+    var tracks by remember {mutableStateOf(emptyList<Track>())}
     //DisposableEffect - is like a brother of LaunchedEffect, but with cleaning.
     // onDispose block executed when screen disappears. Player keeps audio decoder - it's limited resource and if not
     // freed, it causes a leak: sound keeps playing after screen closes, but decoders sooner or later will end.
@@ -71,6 +74,11 @@ fun TrackScreen(modifier: Modifier = Modifier){
             override fun onIsPlayingChanged(playing: Boolean){
                 isPlaying = playing
             }
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                currentTrackId = player.currentMediaItemIndex
+                    .let {tracks.getOrNull(it)} // let takes value, sends it in block as 'it' and returns result
+                    ?.id
+            }// take index, get track (can be null), get its id
         }
         player.addListener(listener)
         onDispose {
@@ -92,7 +100,6 @@ fun TrackScreen(modifier: Modifier = Modifier){
         )
     }
 
-    var tracks by remember {mutableStateOf(emptyList<Track>())}
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted -> hasPermission = granted }
@@ -111,16 +118,34 @@ fun TrackScreen(modifier: Modifier = Modifier){
         }
     }
     if (hasPermission){
-        TrackList(tracks = tracks, currentTrackId = currentTrackId, isPlaying = isPlaying, onTrackClick = {track ->
+        Column(modifier = modifier){
+            TextButton(
+                onClick = {
+                    shuffleEnabled = !shuffleEnabled
+                    player.shuffleModeEnabled = shuffleEnabled
+                }
+            ) {
+                Text (if (shuffleEnabled) "Shuffle: on" else "Shuffle: off")
+            }
+        TrackList(
+            tracks = tracks,
+            currentTrackId = currentTrackId,
+            isPlaying = isPlaying,
+            onTrackClick = {track ->
             if (track.id == currentTrackId){
                 if(player.isPlaying) player.pause() else player.play()
             } else {
-                player.setMediaItem(MediaItem.fromUri(track.uri))
+                val index = tracks.indexOf(track)
+                // tracks.map {MediaItem.fromUri(it.uri)} turns list of tracks into list of elements for player
+                // It's same Select from LINQ, and "it" - implicit name for parameter in lambda, when it's alone. Then index tells from which element to start,
+                // 0L - from which millisecond inside of it
+                player.setMediaItems(tracks.map{ MediaItem.fromUri(it.uri)}, index, 0L)
                 player.prepare()
                 player.play()
                 currentTrackId = track.id
             }
         }, modifier = modifier)
+        }
     }  else {
         Text(
             text = "Access to media on device is required",

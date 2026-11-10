@@ -136,3 +136,60 @@ if (track.id == currentTrackId) {
 - No background playback or notification yet: playback is tied to the screen.
 - From before: `loadTracks` still runs on the main thread, and the unused imports `Log` and `Preview` are still there.
 - Next per 0.1 scope: background service with notification (`MediaSessionService`), queue, shuffle.
+
+---
+
+## 2026-11-11 — Queue (whole list as playlist) and shuffle
+
+### Changed: `MainActivity.kt`, tapping a track now queues the whole list
+
+**Before:** `setMediaItem(...)` loaded one song. When it ended, playback stopped.
+**Now:** the whole track list becomes the player's queue, starting at the tapped track:
+```kotlin
+val index = tracks.indexOf(track)
+player.setMediaItems(tracks.map { MediaItem.fromUri(it.uri) }, index, 0L)
+player.prepare()
+player.play()
+```
+- `tracks.map { ... }` turns the list of `Track` into a list of `MediaItem`, the same as `Select` in LINQ.
+- `it` is the implicit name of a lambda's parameter when it has exactly one.
+- `setMediaItems(items, startIndex, startPositionMs)`: `index` says which item to start from, and `0L` is the position in milliseconds inside it (`L` makes it a `Long` literal).
+- After the current song ends, ExoPlayer moves to the next item in the queue on its own.
+
+### Added: tracking the current song via `onMediaItemTransition`
+Since the player now switches songs by itself, the UI must learn about it. A second callback was added to the existing `Player.Listener`:
+```kotlin
+override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+    currentTrackId = player.currentMediaItemIndex
+        .let { tracks.getOrNull(it) }
+        ?.id
+}
+```
+- Reading the chain: take the index of the current item → get the track at that index (or `null` if out of range) → get its `id` (or `null`).
+- `let { }` takes the value, passes it into the block as `it`, and returns the block's result. It's handy for continuing a chain.
+- `getOrNull(i)` is a safe index: it returns `null` instead of throwing `IndexOutOfBoundsException`.
+- `?.id` (safe call) reads `.id` only if the left side isn't `null`, otherwise the whole expression is `null`.
+- This works with shuffle too: shuffle changes the playback *order*, not the item *indices*, so `currentMediaItemIndex` still matches the position in `tracks`.
+- The listener is created once, yet still sees the newest `tracks`: because of `by`, every read of `tracks` is actually `tracks.value`, read at the moment the callback fires.
+- `currentTrackId = track.id` in the click handler is now redundant (the transition callback also fires when playback starts), but harmless.
+
+### Added: shuffle toggle
+- New state `var shuffleEnabled by remember { mutableStateOf(false) }`.
+- A `TextButton` above the list flips it and passes it to the player: `player.shuffleModeEnabled = shuffleEnabled`. In Kotlin, Java getter/setter pairs (`setShuffleModeEnabled`) look like properties.
+- The label is computed from state: `if (shuffleEnabled) "Shuffle: on" else "Shuffle: off"`. `if` is an expression in Kotlin and returns a value, like the ternary `?:` in C++/C#.
+- The button and the list are wrapped in a `Column`, so they're stacked vertically.
+
+### Bug fixed during development: `Unresolved reference 'tracks'`
+- The new listener used `tracks`, but `var tracks` was declared lower in the function. **A local variable exists only from its declaration line onward** (as in C++/C#). Class members can be declared in any order, local variables can't.
+- The other errors ("Cannot infer type for type parameter 'R'", "Unresolved reference 'id'") were knock-on effects of the first one.
+- Fix: `var tracks` moved up next to the other state, above `DisposableEffect`.
+
+**Flow:** tap a row → queue = all tracks, start at the tapped one → song ends → the player moves to the next (or a random one if shuffle is on) → `onMediaItemTransition` → `currentTrackId` updated → recomposition → highlight moves to the new row.
+
+### Known issues / next steps
+- **Padding is applied twice:** both `Column(modifier = modifier)` and the `TrackList(..., modifier = modifier)` inside it receive the Scaffold `innerPadding`. Remove `modifier = modifier` from `TrackList`. Rule: a composable's `modifier` parameter goes only to its outermost element.
+- After the **last** track in the queue ends, the player is in `STATE_ENDED`, and tapping that track does nothing (needs `seekTo(0)`).
+- Rotating the screen still stops playback and resets state (fixed later by `MediaSessionService`).
+- No background playback or notification yet.
+- `loadTracks` still on the main thread; the unused imports `Log` and `Preview` remain.
+- Next per 0.1 scope: background service with notification (`MediaSessionService`). Queue and shuffle are now done in basic form.
