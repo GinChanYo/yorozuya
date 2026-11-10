@@ -9,8 +9,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +31,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
 import io.github.ginchanyo.yorozuya.ui.theme.YorozuyaTheme
 
 class MainActivity : ComponentActivity() {
@@ -53,6 +58,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun TrackScreen(modifier: Modifier = Modifier){
     val context = LocalContext.current
+    val player = remember { ExoPlayer.Builder(context).build() }
+    //DisposableEffect - is like a brother of LaunchedEffect, but with cleaning.
+    // onDispose block executed when screen disappears. Player keeps audio decoder - it's limited resource and if not
+    // freed, it causes a leak: sound keeps playing after screen closes, but decoders sooner or later will end.
+    // Anything that is required to close, is closed with DisposableEffect
+    DisposableEffect(Unit) {
+        onDispose { player.release() }
+    }
     // mutableStateOf makes value observable. Assigning new - Compose notices it and redraws those places where it's read.
     // That's the whole trick: no updateUI() needed, just variable change.
     // "by" keyword is properties delegation. Without it, I would have had to write tracks.value on each addressation;
@@ -86,7 +99,11 @@ fun TrackScreen(modifier: Modifier = Modifier){
         }
     }
     if (hasPermission){
-        TrackList(tracks = tracks, modifier = modifier)
+        TrackList(tracks = tracks, onTrackClick = {track ->
+            player.setMediaItem(MediaItem.fromUri(track.uri))
+            player.prepare()
+            player.play()
+        }, modifier = modifier)
     }  else {
         Text(
             text = "Access to media on device is required",
@@ -96,17 +113,21 @@ fun TrackScreen(modifier: Modifier = Modifier){
 }
 
 @Composable
-fun TrackList(tracks: List<Track>, modifier: Modifier = Modifier){
+fun TrackList(tracks: List<Track>, onTrackClick: (Track) -> Unit, modifier: Modifier = Modifier){
     LazyColumn(modifier = modifier){
         items(tracks){ track ->
-            TrackRow(track)
+            TrackRow(track = track, onClick = {onTrackClick(track)})
         }
     }
 }
 
 @Composable
-fun TrackRow(track: Track){
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)){
+fun TrackRow(track: Track, onClick: () -> Unit){
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp)){
         Text(
             text = track.title,
             style = MaterialTheme.typography.bodyLarge,
