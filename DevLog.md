@@ -316,3 +316,31 @@ future.addListener({
 - The comment above `DisposableEffect` in `MainActivity.kt` still talks about the player's decoder. Now it's the controller *connection* that gets released there, and the decoder is released in `PlaybackService.onDestroy`.
 - From before: double `modifier` padding on `TrackList`, `STATE_ENDED` after the last track, `loadTracks` on the main thread, unused `Log`/`Preview` imports.
 - Next per 0.1 scope: check the notification and background playback on a device.
+
+---
+
+## 2026-11-11 (evening) — Audio attributes, audio focus and "becoming noisy"
+
+### Changed: `PlaybackService.kt`, the player is now configured as a music player
+```kotlin
+val audioAttributes = AudioAttributes.Builder()
+    .setUsage(C.USAGE_MEDIA)
+    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+    .build()
+val player = ExoPlayer.Builder(this)
+    .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
+    .setHandleAudioBecomingNoisy(true)
+    .build()
+```
+- **`AudioAttributes`** (from `androidx.media3.common`) describes *what kind* of sound the app plays. `C` is Media3's class of constants.
+  - `C.USAGE_MEDIA` + `C.AUDIO_CONTENT_TYPE_MUSIC` tell the system this is music. Android uses that for volume routing (the media volume stream) and to decide how other sounds, such as navigation prompts or notifications, are mixed with it.
+- **Builder pattern:** each `.setX(...)` returns the builder itself, so calls can be chained, and `.build()` produces the final immutable object. ExoPlayer and MediaSession are built the same way.
+- **`handleAudioFocus = true`**: *audio focus* is Android's way of letting apps take turns playing sound. With this flag, ExoPlayer requests focus when playback starts and reacts when it's lost. It pauses during a phone call, and it lowers the volume ("ducks") or pauses when another app starts playing.
+- **`setHandleAudioBecomingNoisy(true)`** pauses playback when headphones are unplugged or Bluetooth disconnects. Without it, the music would suddenly come out of the phone speaker.
+- **Why the `/* handleAudioFocus = */` comment:** `setAudioAttributes` is a Java method, and Kotlin doesn't allow named arguments when calling Java methods. So `setAudioAttributes(attrs, handleAudioFocus = true)` doesn't compile. An inline comment is the usual way to keep a bare `true` readable.
+
+**How to check:** start a track, then play a video in another app (the music should pause or duck), or unplug the headphones (it should pause).
+
+### Known issues / next steps
+- Still open from before: state isn't re-read when the controller reconnects, the service never stops on its own (`onTaskRemoved`), the outdated comment above `DisposableEffect`, double `modifier` padding on `TrackList`, `STATE_ENDED` after the last track, `loadTracks` on the main thread, unused `Log`/`Preview` imports.
+- Typo "plater" in the header comment of `PlaybackService.kt`.
