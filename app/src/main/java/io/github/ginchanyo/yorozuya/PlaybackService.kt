@@ -6,7 +6,7 @@ import androidx.media3.session.MediaSessionService
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 // MediaSessionService - ready template made by Google, that calls foreground-service and draws notification with buttons
-// MediaSession - wrapper above plater, that makes it accessible from outside: in system, via notification bar, using Bluetooth control and etc
+// MediaSession - wrapper above player, that makes it accessible from outside: in system, via notification bar, using Bluetooth control and etc
 // Method onGetSession answers the question "Which session to give to this client"
 class PlaybackService : MediaSessionService() {
 
