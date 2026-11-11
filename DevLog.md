@@ -193,3 +193,126 @@ override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
 - No background playback or notification yet.
 - `loadTracks` still on the main thread; the unused imports `Log` and `Preview` remain.
 - Next per 0.1 scope: background service with notification (`MediaSessionService`). Queue and shuffle are now done in basic form.
+
+---
+
+## 2026-11-11 (later) — Playback moved into `MediaSessionService`, UI controls it via `MediaController`
+
+### Why
+Until now the `ExoPlayer` lived inside `TrackScreen`. Playback was tied to the screen: closing the app or rotating the device released the player. Android's way to keep audio running without the UI is a **Service**, a component with no screen whose lifetime is separate from the Activity. Media3 provides a ready-made one: `MediaSessionService`.
+
+New architecture:
+```
+MainActivity / TrackScreen  ──MediaController──▶  MediaSession  ──▶  ExoPlayer
+        (UI, sends commands)                     (inside PlaybackService)
+```
+
+### Added: Media3 Session dependency
+- `gradle/libs.versions.toml`: `androidx-media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }`.
+- `app/build.gradle.kts`: `implementation(libs.androidx.media3.session)`.
+- **Bugs fixed during development (sync error):**
+  1. The alias was first `androidx-media-session`, which becomes `libs.androidx.media.session`. The build file asked for `libs.androidx.media3.session`, which didn't exist. The alias in the toml and the accessor in the build file must match (dashes become dots).
+  2. The group was `androidx.media` (the old legacy library). Every Media3 module uses group `androidx.media3`. With the wrong group, Gradle can't download the library, so **every** line using its classes turns red, even if the code is correct.
+  - Lesson: when nearly everything from one library is red, check the Gradle setup first. Library coordinates are `group:name:version`; compare new entries with ones that already work.
+- To re-sync: "Sync Now" banner, the elephant icon, or File → Sync Project with Gradle Files (Ctrl+Shift+O).
+
+### Added: `PlaybackService.kt`
+```kotlin
+class PlaybackService : MediaSessionService() {
+    private var mediaSession: MediaSession? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        val player = ExoPlayer.Builder(this).build()
+        mediaSession = MediaSession.Builder(this, player).build()
+    }
+
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
+        mediaSession
+
+    override fun onDestroy() {
+        mediaSession?.run {
+            player.release()
+            release()
+            mediaSession = null
+        }
+        super.onDestroy()
+    }
+}
+```
+- **`MediaSessionService`** is a Service that owns a `MediaSession`. When playback starts, Media3 turns it into a *foreground service* and shows the media notification (play/pause, next) automatically.
+- **`onCreate()`** runs once when the system starts the service. The `ExoPlayer` is created here now, not in the UI. `this` (the Service) is a Context, just like an Activity.
+- **`MediaSession`** wraps the player and exposes it to the outside world: our UI, the notification, Bluetooth headset buttons, lock screen, Android Auto.
+- **`onGetSession(controllerInfo)`** is called when a controller wants to connect. Returning the session accepts the connection; returning `null` would reject it. `controllerInfo` says who is connecting (useful later for filtering).
+  - `= mediaSession` is an **expression body**: a one-line function without `{ return ... }`, like `=>` in C#.
+- **`onDestroy()`** frees resources in reverse order: player first, then the session.
+  - **`?.run { }`**: runs the block only if `mediaSession` isn't null. Inside the block, `this` is the session, so `player` and `release()` mean `mediaSession.player` and `mediaSession.release()`. (Compare with `let`, where the value is `it`.)
+- `private var ... : MediaSession? = null`: nullable because the session doesn't exist before `onCreate` or after `onDestroy`.
+
+**Bugs fixed during development:**
+- **Name clash in imports:** both `android.media.session.MediaSession` (old framework class, added by auto-import) and `androidx.media3.session.MediaSession` were imported. Two classes with the same simple name make every `MediaSession` ambiguous. Fix: keep only the `androidx.media3` one. Watch which package you choose in the auto-import popup.
+- **`super.onCreate(){ ... }`:** braces right after a call make a **trailing lambda**, a block passed as the last argument. `onCreate()` takes none, and the braces were also off by one, so `onGetSession` and `onDestroy` ended up *inside* `onCreate` ("override not allowed here"). Fix: `super.onCreate()` as a plain statement, and all overrides as siblings in the class.
+
+### Changed: `AndroidManifest.xml`
+```xml
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+
+<service
+    android:name=".PlaybackService"
+    android:foregroundServiceType="mediaPlayback"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="androidx.media3.session.MediaSessionService" />
+    </intent-filter>
+</service>
+```
+- Every Service must be declared in the manifest, or the system won't start it.
+- **`FOREGROUND_SERVICE`** lets the app run a foreground service (one the user is aware of, through a notification). Background services get killed quickly; foreground ones survive.
+- **`FOREGROUND_SERVICE_MEDIA_PLAYBACK`** + **`foregroundServiceType="mediaPlayback"`**: since Android 14, a foreground service must declare *what kind* of work it does, and each type needs its own permission. Both are "normal" permissions, granted automatically at install with no dialog.
+- **`exported="true"`** + the **intent-filter** with the `MediaSessionService` action let *other* apps find and connect to the session: system media controls, Bluetooth, Android Auto, Wear OS.
+
+### Changed: `MainActivity.kt`, the UI now talks to the service
+**State:** `val player = remember { ExoPlayer.Builder(...) }` was replaced by
+```kotlin
+var controller by remember { mutableStateOf<MediaController?>(null) }
+```
+- Nullable because connecting takes time: during the first milliseconds there is no controller yet.
+- It's `mutableStateOf` so that Compose recomposes when the controller arrives.
+
+**Connecting, in `DisposableEffect(context)`:**
+```kotlin
+val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+val future = MediaController.Builder(context, token).buildAsync()
+future.addListener({
+    val mc = future.get()
+    mc.addListener(object : Player.Listener { ... })
+    controller = mc
+}, MoreExecutors.directExecutor())
+```
+- **`ComponentName(context, PlaybackService::class.java)`** is the "address" of a component in your app: package + class name. `::class.java` gets the Java `Class` object of a Kotlin class (like `typeof(PlaybackService)` in C#).
+- **`SessionToken`** identifies the session to connect to. If the service isn't running, connecting starts it.
+- **`buildAsync()`** returns a `ListenableFuture<MediaController>`, a promise of a result like `Task<T>` in C#. The connection is asynchronous, so it doesn't block the UI thread.
+- **`future.addListener(runnable, executor)`** runs the block when the future completes. Inside it, `future.get()` returns the result immediately because it's already done. (Calling `get()` earlier would block until it's ready.)
+- **`MoreExecutors.directExecutor()`** (from Guava, which Media3 brings in) runs the callback on whatever thread completed the future. Media3 completes it on the main thread, so writing Compose state there is safe.
+- The `Player.Listener` (`onIsPlayingChanged`, `onMediaItemTransition`) is now attached to the controller `mc` instead of the player. It works the same way.
+- **`onDispose`**: `MediaController.releaseFuture(future)` releases the controller if it connected, or cancels the connection if it's still pending. Only the *connection* is closed; the player in the service keeps playing.
+- The key changed from `player` to `context`: the effect restarts only if the context changes.
+
+**Why the rest of the code barely changed:** `MediaController` implements the same `Player` interface as `ExoPlayer`. `setMediaItems`, `prepare`, `play`, `pause`, `isPlaying`, `shuffleModeEnabled` are all the same calls. The only differences:
+- `player.` became `controller?.` (shuffle button) or `val mc = controller ?: return@TrackList` (track click).
+  - **`?: return@TrackList`** means "if the controller is null, leave this lambda". `@TrackList` is a **label**: a bare `return` inside a lambda would try to return from `TrackScreen` itself, so you name the lambda to return from.
+- Commands are no longer executed directly: the controller sends them to the session, and the session runs them on the real player. (Here the service runs in the same process as the UI, but it still communicates through the session's binder (IPC) channel, as if it were a different app.)
+
+**Bug fixed during development:** `override fun onIsPlayingChaged` (a missing "n") was red: `override` requires an existing method with exactly that name and signature in the parent type, and `Player.Listener` has none, so it "overrides nothing". Tip: use **Ctrl+O** (Override Methods) inside `object : ... { }` to generate the correct signature.
+
+- The unused `ExoPlayer` import was removed from `MainActivity.kt`.
+
+**Flow:** screen appears → `DisposableEffect` builds a `SessionToken` → `buildAsync()` starts/binds `PlaybackService` → service `onCreate` creates ExoPlayer + MediaSession → `onGetSession` accepts → future completes → listener attached, `controller` set → recomposition → tap a track → `mc.setMediaItems(...)`, `play()` → session plays on ExoPlayer → notification appears → session reports back → `onIsPlayingChanged` / `onMediaItemTransition` → state updated → UI redrawn.
+
+### Known issues / next steps
+- **State isn't re-read on reconnect.** After rotation the controller reconnects, but `isPlaying` and `currentTrackId` start from their defaults until the next event. Fix: right after `future.get()`, set `isPlaying = mc.isPlaying` and compute `currentTrackId` from `mc.currentMediaItemIndex`. (`tracks`, held by `remember`, is also lost on rotation; a `ViewModel` would fix that.)
+- **The service never stops on its own.** When the app is swiped away from recents, the service keeps running even if paused. Usual fix: override `onTaskRemoved` and call `stopSelf()` if the player isn't playing.
+- The comment above `DisposableEffect` in `MainActivity.kt` still talks about the player's decoder. Now it's the controller *connection* that gets released there, and the decoder is released in `PlaybackService.onDestroy`.
+- From before: double `modifier` padding on `TrackList`, `STATE_ENDED` after the last track, `loadTracks` on the main thread, unused `Log`/`Preview` imports.
+- Next per 0.1 scope: check the notification and background playback on a device.
