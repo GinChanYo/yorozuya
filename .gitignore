@@ -17,3 +17,4 @@ local.properties
 *.keystore
 keystore.properties
 .idea/claudeCodeEditorTabs.xml
+/conceptArt/
