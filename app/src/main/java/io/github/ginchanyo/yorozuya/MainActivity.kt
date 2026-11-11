@@ -1,6 +1,7 @@
 package io.github.ginchanyo.yorozuya
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
@@ -34,7 +35,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.MoreExecutors
 import io.github.ginchanyo.yorozuya.ui.theme.YorozuyaTheme
 
 class MainActivity : ComponentActivity() {
@@ -60,7 +63,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun TrackScreen(modifier: Modifier = Modifier){
     val context = LocalContext.current
-    val player = remember { ExoPlayer.Builder(context).build() }
+    var controller by remember {mutableStateOf<MediaController?>(null)}
     var currentTrackId by remember {mutableStateOf<Long?>(null)}
     var isPlaying by remember {mutableStateOf(false)}
     var shuffleEnabled  by remember {mutableStateOf(false)}
@@ -69,22 +72,42 @@ fun TrackScreen(modifier: Modifier = Modifier){
     // onDispose block executed when screen disappears. Player keeps audio decoder - it's limited resource and if not
     // freed, it causes a leak: sound keeps playing after screen closes, but decoders sooner or later will end.
     // Anything that is required to close, is closed with DisposableEffect
-    DisposableEffect(player) {
-        val listener = object: Player.Listener{
-            override fun onIsPlayingChanged(playing: Boolean){
-                isPlaying = playing
-            }
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                currentTrackId = player.currentMediaItemIndex
-                    .let {tracks.getOrNull(it)} // let takes value, sends it in block as 'it' and returns result
-                    ?.id
-            }// take index, get track (can be null), get its id
-        }
-        player.addListener(listener)
+    DisposableEffect(context) {
+        // Session token - services' address, thanks to which connection is available
+        val token = SessionToken(
+            context,
+            ComponentName(context, PlaybackService::class.java)
+        )
+
+        // Next line established the connection async-ly: service may yet not start, that's why returns ListenableFuture
+        // promise of result, like Task in C#. When connection is ready, listener fires, and I get controller via future.get() and put it in state.
+        // That's why controller is declared as MediaController? - at first few milliseconds it does not exist yet.
+        val future = MediaController.Builder(context, token).buildAsync()
+
+        future.addListener(
+            {
+                val mc = future.get()
+                mc.addListener(object :  Player.Listener{
+                    override fun onIsPlayingChanged(playing: Boolean){
+                        isPlaying = playing
+                    }
+
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        currentTrackId = mc.currentMediaItemIndex
+                            .let {tracks.getOrNull(it)}
+                            ?.id
+                    }
+                })
+                controller = mc
+            },
+            MoreExecutors.directExecutor()
+        )
         onDispose {
-            player.removeListener(listener)
-            player.release()
+            MediaController.releaseFuture(future)
+            controller = null
         }
+        // MediaController implements same interface Player, that ExoPlayer does. That's why controller code - setMediaItems, play, pause, shuffleModeEnabled stays the same.
+        // The only change is that commands go to different process, and do not execute locally. For that exact reason Media3 is set through shared interface
     }
     // mutableStateOf makes value observable. Assigning new - Compose notices it and redraws those places where it's read.
     // That's the whole trick: no updateUI() needed, just variable change.
@@ -122,7 +145,7 @@ fun TrackScreen(modifier: Modifier = Modifier){
             TextButton(
                 onClick = {
                     shuffleEnabled = !shuffleEnabled
-                    player.shuffleModeEnabled = shuffleEnabled
+                    controller?.shuffleModeEnabled = shuffleEnabled
                 }
             ) {
                 Text (if (shuffleEnabled) "Shuffle: on" else "Shuffle: off")
@@ -132,17 +155,17 @@ fun TrackScreen(modifier: Modifier = Modifier){
             currentTrackId = currentTrackId,
             isPlaying = isPlaying,
             onTrackClick = {track ->
-            if (track.id == currentTrackId){
-                if(player.isPlaying) player.pause() else player.play()
-            } else {
-                val index = tracks.indexOf(track)
-                // tracks.map {MediaItem.fromUri(it.uri)} turns list of tracks into list of elements for player
-                // It's same Select from LINQ, and "it" - implicit name for parameter in lambda, when it's alone. Then index tells from which element to start,
-                // 0L - from which millisecond inside of it
-                player.setMediaItems(tracks.map{ MediaItem.fromUri(it.uri)}, index, 0L)
-                player.prepare()
-                player.play()
-                currentTrackId = track.id
+                val mc =controller ?: return@TrackList // marked return: escapes lambda, not entire function. without mark Kotlin won't know where to return from
+                if (track.id == currentTrackId){
+                    if(mc.isPlaying) mc.pause() else mc.play()
+                } else {
+                    val index = tracks.indexOf(track)
+                    // tracks.map {MediaItem.fromUri(it.uri)} turns list of tracks into list of elements for player
+                    // It's same Select from LINQ, and "it" - implicit name for parameter in lambda, when it's alone. Then index tells from which element to start,
+                    // 0L - from which millisecond inside of it
+                    mc.setMediaItems(tracks.map{ MediaItem.fromUri(it.uri)}, index, 0L)
+                    mc.prepare()
+                    mc.play()
             }
         }, modifier = modifier)
         }
