@@ -410,3 +410,42 @@ val pendingIntent = PendingIntent.getActivity(this, 0, intent,
 - **A deleted file breaks the restore.** If a track in the saved queue was deleted, its URI no longer resolves and the player errors on that item.
 - The service still keeps running when the app is swiped away while paused (`onTaskRemoved`). The Close button gives a manual way out.
 - Still open: the outdated comment above `DisposableEffect`, double `modifier` padding on `TrackList`, `STATE_ENDED` after the last track, `loadTracks` on the main thread, unused `Log`/`Preview` imports in `MainActivity.kt`. (The "plater" typo is already gone.)
+
+---
+
+## 2026-11-12 (later) — Now-playing bar, auto-scroll to the current track
+
+### Added: `MainActivity.kt`, `NowPlayingBar` at the bottom of the screen
+- It shows the current track's title and artist and has a Play/Pause button. It only appears while a track is selected (`if (currentTrack != null)`).
+- `currentTrack = tracks.firstOrNull { it.id == currentTrackId }` finds the track that matches the id, or gives null.
+- **Layout:**
+  - **`Box`** stacks its children on top of each other. The list is drawn first and the bar on top of it.
+  - `Modifier.align(Alignment.BottomCenter)` pins the bar to the bottom. `align` only exists inside `Box { }` (it's an extension available in `BoxScope`), which is why calling it outside the `Box` gave "Unresolved reference 'align'".
+  - Inside the bar, a **`Row`** places items horizontally, and `Modifier.weight(1f)` on the text column takes the remaining width, which pushes the button to the right edge. `weight` only exists inside `Row`/`Column`, for the same reason as `align`.
+  - **`Surface`** + `tonalElevation` gives the bar a background, slightly tinted the way Material 3 shows a raised surface.
+  - `maxLines = 1` + `TextOverflow.Ellipsis` cuts long titles to one line ending in "…".
+- **State hoisting:** the bar receives data plus a callback, `onPlayPauseClick: () -> Unit` (a function type, like C#'s `Action`). It doesn't know about the controller, so `TrackScreen` decides what a click does.
+
+### Added: the list scrolls to the playing track
+```kotlin
+val listState = rememberLazyListState()
+LaunchedEffect(currentTrackId, tracks) {
+    val index = tracks.indexOfFirst { it.id == currentTrackId }
+    if (index >= 0) listState.scrollToItem(index)
+}
+```
+- **`LazyListState`** holds the list's scroll position and lets code scroll it. It's created in `TrackScreen` and passed down to `TrackList` (`LazyColumn(state = listState)`), so the parent controls the scrolling.
+- **The effect has two keys.** It re-runs when the track changes *and* when the tracks finish loading. When you return to the app, `currentTrackId` can arrive before the list, and with only one key the index would be -1 and nothing would scroll.
+- `scrollToItem` is a `suspend` function. A `LaunchedEffect` body is a coroutine, so it can be called there.
+
+### Fixed
+- **The bar no longer covers the last track.** `LazyColumn(contentPadding = PaddingValues(bottom = 72.dp))` adds empty space *inside* the scrollable area after the last item. `Modifier.padding` would shrink the list instead.
+- **Double padding on `TrackList`:** `modifier = modifier` was removed from the call, so the Scaffold's `innerPadding` is applied once (by the `Box`).
+- **Build errors along the way:**
+  - The IDE's "Create parameter" quick-fix added a bogus `align` parameter to `TrackScreen` when `align` was used outside the `Box`.
+  - "Optimize imports" removed `Row`'s import while the file didn't compile. That one missing import also produced "@Composable invocations can only happen…" and "Unresolved reference 'weight'".
+
+### Known issues / next steps
+- **The permission message is gone.** The `if (hasPermission) ... else Text("Access to media on device is required")` branch was removed, so if access is denied the user sees an empty list with only a Shuffle button.
+- **Auto-scroll jumps when you tap a track.** `scrollToItem` always puts the item at the top of the list, so tapping a track in the middle of the screen moves it to the top. Options: scroll only when the item isn't visible (check `listState.layoutInfo.visibleItemsInfo`), and/or use `animateScrollToItem` for a smooth scroll.
+- Still open from before: "Close" wipes the saved queue, the outdated comment above `DisposableEffect`, `STATE_ENDED` after the last track, `loadTracks` on the main thread, the unused `Preview` import (`Log` is gone).
