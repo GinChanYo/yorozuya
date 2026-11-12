@@ -344,3 +344,69 @@ val player = ExoPlayer.Builder(this)
 ### Known issues / next steps
 - Still open from before: state isn't re-read when the controller reconnects, the service never stops on its own (`onTaskRemoved`), the outdated comment above `DisposableEffect`, double `modifier` padding on `TrackList`, `STATE_ENDED` after the last track, `loadTracks` on the main thread, unused `Log`/`Preview` imports.
 - Typo "plater" in the header comment of `PlaybackService.kt`.
+
+---
+
+## 2026-11-12 — "Close" button in the notification, opening the app from the notification, resuming playback after restart
+
+### Added: `PlaybackService.kt`, "Close" button in the media notification
+```kotlin
+private val stopCommand = SessionCommand("ACTION_STOP", Bundle.EMPTY)
+
+val stopButton = CommandButton.Builder(CommandButton.ICON_STOP)
+    .setDisplayName("Close")
+    .setSessionCommand(stopCommand)
+    .build()
+mediaSession = MediaSession.Builder(this, player)
+    .setCallback(CallBack())
+    .setMediaButtonPreferences(ImmutableList.of(stopButton))
+    .setSessionActivity(pendingIntent)
+    .build()
+```
+- **`SessionCommand`** is a custom command, identified by its name (`customAction`). Standard commands like play or next are built in, but for anything else you define your own.
+- **`CommandButton`** is a button in the notification. It has an icon, a label and the command it sends when pressed. `setMediaButtonPreferences` passes the list of extra buttons to the session.
+- **`MediaSession.Callback`** (the `CallBack` inner class) is where the session asks us what to do:
+  - `onConnect` runs when a controller connects (our UI, the notification, Bluetooth). It returns the allowed commands: `DEFAULT_SESSION_COMMANDS` plus `stopCommand`. Without that addition the session would reject the button press.
+  - `onCustomCommand` handles the command. It calls `stop()` and then `clearMediaItems()` (which removes the notification), followed by `stopSelf()`, which shuts down the service.
+  - It must return a `ListenableFuture<SessionResult>` (an async result). `Futures.immediateFuture(...)` from Guava wraps a value that is already ready.
+- **`inner class`**: a nested class that keeps a reference to the outer `PlaybackService`, so it can use `stopCommand` and `stopSelf()`. A plain nested class in Kotlin works like a `static` nested class in C#.
+
+**Bug fixed during development:** I wrote `Future.immediateFuture` and got "Unresolved reference". The class is `Futures` (plural), from `com.google.common.util.concurrent`.
+
+### Added: tapping the notification opens the app
+```kotlin
+val intent = Intent(this, MainActivity::class.java)
+val pendingIntent = PendingIntent.getActivity(this, 0, intent,
+    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+```
+- **`Intent`** is a message that describes what to open. A **`PendingIntent`** wraps it so the system (here, the notification) can fire it later on the app's behalf. `setSessionActivity(pendingIntent)` connects it to the session.
+- `FLAG_IMMUTABLE` has been mandatory since Android 12. `or` is Kotlin's bitwise OR (`|` in C#).
+
+### `@OptIn(UnstableApi::class)` on `PlaybackService`
+- Media3 marks some APIs with `@UnstableApi`, which means they work but may change in future versions. `setMediaButtonPreferences`, `DEFAULT_SESSION_COMMANDS` and `AcceptedResultBuilder` are among them.
+- These are **lint** errors (red underlines in the IDE), not compiler errors. The Gradle build passed anyway.
+- `@OptIn(UnstableApi::class)` on the class accepts the risk for everything inside it. The import must be `androidx.annotation.OptIn` (not `kotlin.OptIn`) because that's the one Media3's lint check looks for.
+- Adding the same import twice is a compile error ("imported name is ambiguous").
+
+### Fixed: `MainActivity.kt`, the app now shows the currently playing song when you return to it
+- Every `MediaItem` now gets a **`mediaId`**, the track's MediaStore id as text: `MediaItem.Builder().setUri(...).setMediaId(it.id.toString())`. Any controller can now tell which track is playing from the item itself instead of looking it up by index in `tracks`.
+- `onMediaItemTransition` reads the id directly: `mediaItem?.mediaId?.toLongOrNull()`.
+- **`syncFromPlayer(mc)`** runs right after connecting and copies `currentTrackId` and `isPlaying` from the player. The listener only reports *future* changes, so without this the UI showed nothing as playing until the next event. This closes the "state isn't re-read on reconnect" issue from 2026-11-11.
+- `syncFromPlayer` is a **local function**, a function declared inside another function (the same as C# local functions).
+
+### Added: `PlaybackService.kt`, the queue and position survive a restart
+- **`SharedPreferences`** is a small key-value store kept in a private XML file. `getSharedPreferences(PREFS_NAME, MODE_PRIVATE)` opens it, and `MODE_PRIVATE` means only this app can read it.
+- **`saveState()`** stores the queue as comma-separated media ids (`"12,57,103"`), plus the current index and position. `prefs.edit()...apply()` writes asynchronously (`commit()` would block).
+- **`restoreState(player)`** splits the string and rebuilds each `MediaItem` from `ContentUris.withAppendedId(collection, id)`. It then calls `setMediaItems(items, index, position)` and `prepare()` without `play()`, so the app starts paused at the saved spot.
+- **When the state is saved:** on track change, on play/pause (both through a `Player.Listener`), and in `onDestroy` before the player is released.
+- New Kotlin constructs:
+  - `lateinit var` promises the compiler that the value will be set later (in `onCreate`) instead of in the constructor.
+  - `companion object` holds class-level ("static") members. `const val` is a compile-time constant.
+  - `?: return` (Elvis operator) exits the function when the left side is null.
+  - `0 until n` is the range 0..n-1. `mapNotNull` is a `map` that drops nulls. `toLongOrNull()` returns null instead of throwing on bad input.
+
+### Known issues / next steps
+- **"Close" wipes the saved queue.** `clearMediaItems()` fires `onMediaItemTransition`, which calls `saveState()` with an empty queue, and `onDestroy` saves the empty state again. If Close should still allow resuming later, skip saving while closing (e.g. a `closing` flag) or don't clear the queue.
+- **A deleted file breaks the restore.** If a track in the saved queue was deleted, its URI no longer resolves and the player errors on that item.
+- The service still keeps running when the app is swiped away while paused (`onTaskRemoved`). The Close button gives a manual way out.
+- Still open: the outdated comment above `DisposableEffect`, double `modifier` padding on `TrackList`, `STATE_ENDED` after the last track, `loadTracks` on the main thread, unused `Log`/`Preview` imports in `MainActivity.kt`. (The "plater" typo is already gone.)

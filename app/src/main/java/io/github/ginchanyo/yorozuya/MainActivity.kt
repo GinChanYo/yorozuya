@@ -84,6 +84,9 @@ fun TrackScreen(modifier: Modifier = Modifier){
         // That's why controller is declared as MediaController? - at first few milliseconds it does not exist yet.
         val future = MediaController.Builder(context, token).buildAsync()
 
+        // Local function (function declared inside another function, like C# local functions).
+        // Reads current state right after connecting, because listener only reports *future* changes:
+        // without it, returning to the app showed nothing as playing until next track change
         fun syncFromPlayer(p: Player){
             currentTrackId = p.currentMediaItem?.mediaId?.toLongOrNull()
             isPlaying = p.isPlaying
@@ -169,6 +172,8 @@ fun TrackScreen(modifier: Modifier = Modifier){
                     // 0L - from which millisecond inside of it
                     mc.setMediaItems(
                         tracks.map{
+                            // mediaId - our own label for the item (MediaStore id as text), so any
+                            // controller can tell which track is playing without relying on list indices
                             MediaItem.Builder()
                                 .setUri(it.uri)
                                 .setMediaId(it.id.toString())
