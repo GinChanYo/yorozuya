@@ -84,6 +84,11 @@ fun TrackScreen(modifier: Modifier = Modifier){
         // That's why controller is declared as MediaController? - at first few milliseconds it does not exist yet.
         val future = MediaController.Builder(context, token).buildAsync()
 
+        fun syncFromPlayer(p: Player){
+            currentTrackId = p.currentMediaItem?.mediaId?.toLongOrNull()
+            isPlaying = p.isPlaying
+        }
+
         future.addListener(
             {
                 val mc = future.get()
@@ -93,11 +98,10 @@ fun TrackScreen(modifier: Modifier = Modifier){
                     }
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                        currentTrackId = mc.currentMediaItemIndex
-                            .let {tracks.getOrNull(it)}
-                            ?.id
+                        currentTrackId = mediaItem?.mediaId?.toLongOrNull()
                     }
                 })
+                syncFromPlayer(mc)
                 controller = mc
             },
             MoreExecutors.directExecutor()
@@ -163,7 +167,14 @@ fun TrackScreen(modifier: Modifier = Modifier){
                     // tracks.map {MediaItem.fromUri(it.uri)} turns list of tracks into list of elements for player
                     // It's same Select from LINQ, and "it" - implicit name for parameter in lambda, when it's alone. Then index tells from which element to start,
                     // 0L - from which millisecond inside of it
-                    mc.setMediaItems(tracks.map{ MediaItem.fromUri(it.uri)}, index, 0L)
+                    mc.setMediaItems(
+                        tracks.map{
+                            MediaItem.Builder()
+                                .setUri(it.uri)
+                                .setMediaId(it.id.toString())
+                                .build()},
+                        index,
+                        0L)
                     mc.prepare()
                     mc.play()
             }
