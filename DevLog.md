@@ -449,3 +449,49 @@ LaunchedEffect(currentTrackId, tracks) {
 - **The permission message is gone.** The `if (hasPermission) ... else Text("Access to media on device is required")` branch was removed, so if access is denied the user sees an empty list with only a Shuffle button.
 - **Auto-scroll jumps when you tap a track.** `scrollToItem` always puts the item at the top of the list, so tapping a track in the middle of the screen moves it to the top. Options: scroll only when the item isn't visible (check `listState.layoutInfo.visibleItemsInfo`), and/or use `animateScrollToItem` for a smooth scroll.
 - Still open from before: "Close" wipes the saved queue, the outdated comment above `DisposableEffect`, `STATE_ENDED` after the last track, `loadTracks` on the main thread, the unused `Preview` import (`Log` is gone).
+
+---
+
+## 2026-11-13 — Library filter by folder, layout fixes
+
+### Added: `Track.kt` / `TrackLoader.kt`, each track's folder
+- `Track` has a new field, `relativePath: String`. `loadTracks` now also reads the `MediaStore.Audio.Media.RELATIVE_PATH` column, for example `"Music/Rock/"`: the folder relative to the storage root, always ending in `/`. If the column is null, the track gets `""`.
+
+### Added: `MainActivity.kt`, a "Directories" button and folder picker dialog (IDEAS.md #2)
+- New state:
+  - `allTracks` is everything MediaStore returned.
+  - `selectedPaths: Set<String>` holds the folders the user ticked.
+  - `includeSubfolders` holds the "Search the subfolders as well" checkbox.
+  - `showFolderPicker` opens and closes the dialog.
+- **`tracks` is now derived:** `remember(allTracks, selectedPaths, includeSubfolders) { ... }` recomputes the filtered list only when one of its keys changes:
+  - no folders selected → all tracks
+  - subfolders on → `relativePath.startsWith(folder)`
+  - subfolders off → an exact folder match
+- **`FolderPickerDialog`** is an `AlertDialog` with the subfolders checkbox, a `HorizontalDivider`, then a `LazyColumn` of folders, each with a `Checkbox` and its track count. It only gets data and callbacks (state hoisting again).
+- **`buildFolderList(allTracks, includeSubfolders)`** is a plain (non-`@Composable`) function that only computes data:
+  - With subfolders off, it lists the folders that directly contain tracks, biggest first.
+  - With subfolders on, it also lists every parent folder. For example, `"Music/Rock/Live/"` produces `"Music/"`, `"Music/Rock/"` and `"Music/Rock/Live/"`, so a folder that only has subfolders can be picked too. Each one counts all tracks below it, and the list is sorted alphabetically so parents sit right above their children.
+  - Kotlin used here:
+    - `flatMap` maps each element to a list and merges the lists (LINQ `SelectMany`), and `toSet()` removes duplicates.
+    - `(path, list) ->` is destructuring, which unpacks a map entry into two variables, like tuple deconstruction in C#.
+    - `a to b` creates a `Pair`.
+- **Persistence:** the dialog's `onDismiss` saves `"paths"` (`putStringSet`) and `"subfolders"` (`putBoolean`) to a `"library"` SharedPreferences file. Both are read back in `LaunchedEffect(hasPermission)` after the tracks load.
+
+**Bugs fixed during development:**
+- **"No parameter with name 'includeSubfolders'":** the dialog was called with, and used, parameters that weren't in its signature. A Kotlin function only sees its own parameters, not the variables at the place where it's called.
+- **"Unexpected tokens":** a leftover `},` closed `text = { }` too early when the `LazyColumn` was wrapped in a new `Column`.
+- **The divider was inside the checkbox `Row`:** a misplaced `}`. It compiled fine but drew a short line *next to* the text. The compiler can't catch layout mistakes like this one.
+
+### Fixed: layout
+- **The Shuffle and Directories buttons are side by side.** Before, they were stacked vertically, and there was a leftover empty `Row {}`. They're now inside one `Row(Modifier.fillMaxWidth())`.
+- **The list fills the rest of the screen.** The `Column` got `fillMaxSize()` and the list got `Modifier.weight(1f)`, so it takes exactly the height left under the buttons.
+- **Auto-scroll no longer jumps on tap.** The effect only scrolls if the playing track is off screen (`index !in listState.layoutInfo.visibleItemsInfo.map { it.index }`), and it uses `animateScrollToItem` for a smooth scroll. `return@LaunchedEffect` is a labeled return that exits only the effect's lambda.
+- **The now-playing bar stays when the playing song is filtered out.** `currentTrack` is searched in `allTracks` instead of the filtered `tracks`.
+- **The permission message is back:** if access is denied, the screen shows "Access to media on device is required" instead of the list.
+- **Unused imports removed:** `Log`, `Preview`, and `isLiveLiteralsEnabled` (probably added by accident by auto-import).
+
+### Known issues / next steps
+- **Empty filter result:** if the selected folders no longer exist or contain no tracks, the list is just empty. It should show a hint like "No tracks in selected folders".
+- **Two different "queue" ideas:** tapping a track now queues only the *filtered* list, while the service restores whatever queue was saved. That's fine for now, but keep it in mind for IDEAS.md #3 (play a directory as its own queue).
+- **Folder counts are computed on every recomposition while the dialog is open.** `buildFolderList` loops over all tracks for each folder. That's fine for a few thousand songs; wrap it in `remember(allTracks, includeSubfolders)` if it gets slow.
+- Still open: "Close" wipes the saved queue, the outdated "decoder" comment above `DisposableEffect`, `STATE_ENDED` after the last track, `loadTracks` on the main thread.

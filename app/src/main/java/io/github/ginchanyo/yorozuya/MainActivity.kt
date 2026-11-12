@@ -2,9 +2,9 @@ package io.github.ginchanyo.yorozuya
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -22,6 +22,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -38,7 +41,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
@@ -63,20 +65,38 @@ class MainActivity : ComponentActivity() {
 }
 
 
-
 // @Composable - function that describes the state of the screen and does NOT build it.
 // When data changes, Compose calls function again - it's called "recomposition".
 // If I Kept "var tracks = emptyList<Track>()" then on each call this variable would have been recreated and value lost.
 // Need a way to survive recomposition, that's why is used "remember".
 @Composable
-fun TrackScreen(modifier: Modifier = Modifier){
+fun TrackScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var controller by remember {mutableStateOf<MediaController?>(null)}
-    var currentTrackId by remember {mutableStateOf<Long?>(null)}
-    var isPlaying by remember {mutableStateOf(false)}
-    var shuffleEnabled  by remember {mutableStateOf(false)}
-    var tracks by remember {mutableStateOf(emptyList<Track>())}
-    val listState = rememberLazyListState() // this object keeps scroll position and allows to control it
+    var controller by remember { mutableStateOf<MediaController?>(null) }
+    var currentTrackId by remember { mutableStateOf<Long?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var shuffleEnabled by remember { mutableStateOf(false) }
+    var allTracks by remember { mutableStateOf(emptyList<Track>()) }
+    var selectedPaths by remember { mutableStateOf(emptySet<String>()) }
+    var showFolderPicker by remember { mutableStateOf(false) }
+    var includeSubfolders by remember { mutableStateOf(false) }
+    val prefs = remember { context.getSharedPreferences("library", Context.MODE_PRIVATE) }
+
+    val tracks = remember(allTracks, selectedPaths, includeSubfolders) {
+        when {
+            selectedPaths.isEmpty() -> allTracks
+            includeSubfolders -> allTracks.filter { track ->
+                selectedPaths.any { track.relativePath.startsWith(it) }
+            }
+
+            else -> allTracks.filter { it.relativePath in selectedPaths }
+        }
+    }
+    val folders = remember(allTracks, includeSubfolders){
+        buildFolderList(allTracks, includeSubfolders)
+    }
+    val listState =
+        rememberLazyListState() // this object keeps scroll position and allows to control it
     //DisposableEffect - is like a brother of LaunchedEffect, but with cleaning.
     // onDispose block executed when screen disappears. Player keeps audio decoder - it's limited resource and if not
     // freed, it causes a leak: sound keeps playing after screen closes, but decoders sooner or later will end.
@@ -96,7 +116,8 @@ fun TrackScreen(modifier: Modifier = Modifier){
         // Local function (function declared inside another function, like C# local functions).
         // Reads current state right after connecting, because listener only reports *future* changes:
         // without it, returning to the app showed nothing as playing until next track change
-        fun syncFromPlayer(p: Player){
+        fun syncFromPlayer(p: Player) {
+            shuffleEnabled = p.shuffleModeEnabled
             currentTrackId = p.currentMediaItem?.mediaId?.toLongOrNull()
             isPlaying = p.isPlaying
         }
@@ -104,8 +125,8 @@ fun TrackScreen(modifier: Modifier = Modifier){
         future.addListener(
             {
                 val mc = future.get()
-                mc.addListener(object :  Player.Listener{
-                    override fun onIsPlayingChanged(playing: Boolean){
+                mc.addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
                     }
 
@@ -147,13 +168,16 @@ fun TrackScreen(modifier: Modifier = Modifier){
     // if it's called in function's body, dialogue will appear infinite amount of times. Argument in brackets is a key:
     // Unit means: "execute once on screen occur", and "hasPermission" - "every time that this value changes, execute again".
     LaunchedEffect(Unit) {
-        if(!hasPermission){
+        if (!hasPermission) {
             launcher.launch(Manifest.permission.READ_MEDIA_AUDIO)
         }
     }
     LaunchedEffect(hasPermission) {
         if (hasPermission) {
-            tracks = loadTracks(context)
+            allTracks = loadTracks(context)
+            selectedPaths = prefs.getStringSet("paths", emptySet()) ?: emptySet()
+            // Saved in FolderPickerDialog's onDismiss; without reading it back the checkbox resets on restart
+            includeSubfolders = prefs.getBoolean("subfolders", false)
         }
     }
     // Scroll list to the playing track. Two keys: re-run when track changes AND when tracks are loaded
@@ -161,58 +185,82 @@ fun TrackScreen(modifier: Modifier = Modifier){
     // LaunchedEffect body is a coroutine, that's why suspend function scrollToItem can be called here
     LaunchedEffect(currentTrackId, tracks) {
         // indexOfFirst - index of first element matching condition, or -1 if none
-        val index = tracks.indexOfFirst {it.id == currentTrackId}
-        if (index >= 0){
-            listState.scrollToItem(index)
+        val index = tracks.indexOfFirst { it.id == currentTrackId }
+        // return@LaunchedEffect - labeled return, exits only this lambda (same idea as return@TrackList)
+        if (index < 0) return@LaunchedEffect
+        // layoutInfo.visibleItemsInfo - items currently on screen. Scroll only if the track is off screen,
+        // otherwise tapping a song would yank it to the top of the list
+        val visible = listState.layoutInfo.visibleItemsInfo.map { it.index }
+        if (index !in visible) {
+            // animate... - smooth scroll instead of an instant jump
+            listState.animateScrollToItem(index)
         }
     }
 
-    // firstOrNull searches list for track with matching ID and returns null if not found
-    val currentTrack = tracks.firstOrNull {it.id == currentTrackId}
+    // firstOrNull searches list for track with matching ID and returns null if not found.
+    // Searched in allTracks, not filtered tracks: the bar must stay even if the playing song is outside selected folders
+    val currentTrack = allTracks.firstOrNull { it.id == currentTrackId }
     // Box - layout that stacks children on top of each other (later child is drawn above earlier one),
     // unlike Column/Row that place them one after another. Here: track list below, NowPlayingBar above it.
     // fillMaxSize - Box takes the whole screen, so its bottom edge is the screen bottom
-    Box(modifier = modifier.fillMaxSize()){
-        Column{
-            TextButton(
-                onClick = {
-                    shuffleEnabled = !shuffleEnabled
-                    controller?.shuffleModeEnabled = shuffleEnabled
+    Box(modifier = modifier.fillMaxSize()) {
+        // fillMaxSize - Column takes the whole Box, so the list below can stretch to the bottom
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Row - buttons side by side in one line instead of stacked vertically
+            Row(modifier = Modifier.fillMaxWidth()) {
+                TextButton(
+                    onClick = {
+                        shuffleEnabled = !shuffleEnabled
+                        controller?.shuffleModeEnabled = shuffleEnabled
+                    }
+                ) {
+                    Text(if (shuffleEnabled) "Shuffle: on" else "Shuffle: off")
                 }
-            ) {
-                Text (if (shuffleEnabled) "Shuffle: on" else "Shuffle: off")
+                TextButton(onClick = { showFolderPicker = true }) {
+                    Text("Directories")
+                }
             }
-        TrackList(
-            tracks = tracks,
-            currentTrackId = currentTrackId,
-            isPlaying = isPlaying,
-            listState = listState,
-            onTrackClick = {track ->
-                val mc =controller ?: return@TrackList // marked return: escapes lambda, not entire function. without mark Kotlin won't know where to return from
-                if (track.id == currentTrackId){
-                    if(mc.isPlaying) mc.pause() else mc.play()
-                } else {
-                    val index = tracks.indexOf(track)
-                    // tracks.map {MediaItem.fromUri(it.uri)} turns list of tracks into list of elements for player
-                    // It's same Select from LINQ, and "it" - implicit name for parameter in lambda, when it's alone. Then index tells from which element to start,
-                    // 0L - from which millisecond inside of it
-                    mc.setMediaItems(
-                        tracks.map{
-                            // mediaId - our own label for the item (MediaStore id as text), so any
-                            // controller can tell which track is playing without relying on list indices
-                            MediaItem.Builder()
-                                .setUri(it.uri)
-                                .setMediaId(it.id.toString())
-                                .build()},
-                        index,
-                        0L)
-                    mc.prepare()
-                    mc.play()
-            }
-        })
+            if (!hasPermission) {
+                Text(
+                    text = "Access to media on device is required",
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else TrackList(
+                // weight(1f) - list takes all height left under the buttons row
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                tracks = tracks,
+                currentTrackId = currentTrackId,
+                isPlaying = isPlaying,
+                listState = listState,
+                onTrackClick = { track ->
+                    val mc = controller
+                        ?: return@TrackList // marked return: escapes lambda, not entire function. without mark Kotlin won't know where to return from
+                    if (track.id == currentTrackId) {
+                        if (mc.isPlaying) mc.pause() else mc.play()
+                    } else {
+                        val index = tracks.indexOf(track)
+                        // tracks.map {MediaItem.fromUri(it.uri)} turns list of tracks into list of elements for player
+                        // It's same Select from LINQ, and "it" - implicit name for parameter in lambda, when it's alone. Then index tells from which element to start,
+                        // 0L - from which millisecond inside of it
+                        mc.setMediaItems(
+                            tracks.map {
+                                // mediaId - our own label for the item (MediaStore id as text), so any
+                                // controller can tell which track is playing without relying on list indices
+                                MediaItem.Builder()
+                                    .setUri(it.uri)
+                                    .setMediaId(it.id.toString())
+                                    .build()
+                            },
+                            index,
+                            0L
+                        )
+                        mc.prepare()
+                        mc.play()
+                    }
+                })
         }
         // Bar is shown only when something is selected; Compose simply doesn't draw it when condition is false
-        if (currentTrack != null){
+        if (currentTrack != null) {
             NowPlayingBar(
                 track = currentTrack,
                 isPlaying = isPlaying,
@@ -224,8 +272,112 @@ fun TrackScreen(modifier: Modifier = Modifier){
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+        if (showFolderPicker) {
+            FolderPickerDialog(
+                folders = buildFolderList(allTracks, includeSubfolders),
+                selected = selectedPaths,
+                includeSubfolders = includeSubfolders,
+                onToggleSubfolders = { includeSubfolders = !includeSubfolders },
+                onToggle = { path ->
+                    selectedPaths = if (path in selectedPaths) {
+                        selectedPaths - path
+                    } else {
+                        selectedPaths + path
+                    }
+                },
+                onDismiss = {
+                    prefs.edit()
+                        .putStringSet("paths", selectedPaths)
+                        .putBoolean("subfolders", includeSubfolders)
+                        .apply()
+                    showFolderPicker = false
+                }
+            )
+        }
     }
 }
+
+// Folders for the picker, as (path, track count) pairs. Plain function, not @Composable - it only computes data.
+// Without subfolders: only folders that directly contain tracks, biggest first.
+// With subfolders: also every parent folder (e.g. "Music/" that has only subfolders), counting all tracks below it,
+// sorted alphabetically so parents appear right above their children.
+fun buildFolderList(tracks: List<Track>, includeSubfolders: Boolean): List<Pair<String, Int>> {
+    if (!includeSubfolders) {
+        return tracks.groupBy { it.relativePath }
+            // (path, list) - destructuring: unpacks Map.Entry into two variables, like tuple deconstruction in C#
+            .map { (path, list) -> path to list.size }
+            .sortedByDescending { it.second }
+    }
+    // "Music/Rock/Live/" -> "Music/", "Music/Rock/", "Music/Rock/Live/"
+    // flatMap - map where each element gives a list, and all lists are merged into one (SelectMany in LINQ)
+    val allFolders = tracks.flatMap { track ->
+        val parts = track.relativePath.split("/").filter { it.isNotEmpty() }
+        parts.indices.map { i -> parts.take(i + 1).joinToString("/") + "/" }
+    }.toSet() // toSet removes duplicates
+    return allFolders
+        .map { folder -> folder to tracks.count { it.relativePath.startsWith(folder) } }
+        .sortedBy { it.first }
+}
+
+@Composable
+fun FolderPickerDialog(
+    folders: List<Pair<String, Int>>,
+    selected: Set<String>,
+    includeSubfolders: Boolean,
+    onToggleSubfolders: () -> Unit,
+    onToggle: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Directories with music") },
+        text = {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleSubfolders() }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = includeSubfolders,
+                        onCheckedChange = { onToggleSubfolders() }
+                    )
+                    Text("Search the subfolders as well")
+                }
+                HorizontalDivider()
+                LazyColumn {
+                    items(folders) { (path, count) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onToggle(path) }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = path in selected,
+                                onCheckedChange = { onToggle(path) }
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(text = path, style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    text = "$count tracks",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        }
+    )
+}
+
 
 // Mini player at the bottom of the screen: title, artist and Play/Pause button.
 // It doesn't know about the controller: it only gets data and a callback (onPlayPauseClick),
@@ -238,7 +390,7 @@ fun NowPlayingBar(
     onPlayPauseClick: () -> Unit,
     // Convention: every reusable composable accepts a modifier, so the caller can position it (e.g. align)
     modifier: Modifier = Modifier
-){
+) {
     // Surface - container with background color, shape and elevation.
     // tonalElevation - in Material 3 "higher" surfaces are tinted slightly, instead of only casting a shadow
     Surface(
@@ -250,7 +402,7 @@ fun NowPlayingBar(
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
-        ){
+        ) {
             // weight(1f) - take all width left after other children (the button), pushing button to the right edge.
             // Available only inside Row/Column scope, same idea as align in Box
             Column(modifier = Modifier.weight(1f)) {
@@ -291,13 +443,14 @@ fun TrackList(
         // contentPadding - empty space added after the last item (inside scrollable area, unlike Modifier.padding),
         // so last track can be scrolled out from under NowPlayingBar
         contentPadding = PaddingValues(bottom = 72.dp),
-        modifier = modifier){
-            items(tracks){ track ->
-                TrackRow(
-                    track = track,
-                    isCurrent = track.id == currentTrackId,
-                    isPlaying = isPlaying,
-                    onClick = {onTrackClick(track)})
+        modifier = modifier
+    ) {
+        items(tracks) { track ->
+            TrackRow(
+                track = track,
+                isCurrent = track.id == currentTrackId,
+                isPlaying = isPlaying,
+                onClick = { onTrackClick(track) })
         }
     }
 }

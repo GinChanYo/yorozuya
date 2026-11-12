@@ -9,5 +9,6 @@ data class Track(
     val title: String,
     val artist: String?,
     val album: String?,
-    val duration: Long
+    val duration: Long,
+    val relativePath: String,
 )

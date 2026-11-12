@@ -11,14 +11,14 @@ import android.provider.MediaStore
 fun loadTracks(context: Context): List<Track>{
     // Here Uri is not the address to track, but to the whole table with audios. Like table name in SQL
     val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
-
 // projection - a list of columns (SELECT analog)
     val projection  = arrayOf(
         MediaStore.Audio.Media._ID,
         MediaStore.Audio.Media.TITLE,
         MediaStore.Audio.Media.ARTIST,
         MediaStore.Audio.Media.ALBUM,
-        MediaStore.Audio.Media.DURATION
+        MediaStore.Audio.Media.DURATION,
+        MediaStore.Audio.Media.RELATIVE_PATH
     )
 // selection - condition (WHERE)
 // Condition IS_MUSIC != 0 removed ringtones and notification sounds, so as system sounds. Otherwise, media player would have alarms as well
@@ -33,6 +33,7 @@ fun loadTracks(context: Context): List<Track>{
     context.contentResolver
         .query(collection, projection, selection, null, sortOrder)
         ?.use {cursor ->
+            val pathCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH)
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
@@ -47,7 +48,8 @@ fun loadTracks(context: Context): List<Track>{
                     title = cursor.getString(titleCol) ?: "Unknown Name",
                     artist = cursor.getString(artistCol),
                     album = cursor.getString(albumCol),
-                    duration = cursor.getLong(durationCol)
+                    duration = cursor.getLong(durationCol),
+                    relativePath = cursor.getString(pathCol) ?: "",
                 )
             }
         }
