@@ -184,16 +184,16 @@ fun TrackScreen(modifier: Modifier = Modifier) {
     // (on app return currentTrackId may arrive before the list, then index would be -1 and nothing would scroll).
     // LaunchedEffect body is a coroutine, that's why suspend function scrollToItem can be called here
     LaunchedEffect(currentTrackId, tracks) {
-        // indexOfFirst - index of first element matching condition, or -1 if none
         val index = tracks.indexOfFirst { it.id == currentTrackId }
-        // return@LaunchedEffect - labeled return, exits only this lambda (same idea as return@TrackList)
         if (index < 0) return@LaunchedEffect
-        // layoutInfo.visibleItemsInfo - items currently on screen. Scroll only if the track is off screen,
-        // otherwise tapping a song would yank it to the top of the list
-        val visible = listState.layoutInfo.visibleItemsInfo.map { it.index }
-        if (index !in visible) {
-            // animate... - smooth scroll instead of an instant jump
-            listState.animateScrollToItem(index)
+
+        val info = listState.layoutInfo
+        val viewportHeight = info.viewportEndOffset - info.viewportStartOffset
+        val itemHeight = info.visibleItemsInfo.firstOrNull()?.size ?: 0
+        val offset = -(viewportHeight / 2 - itemHeight / 2)
+
+        if (index !in info.visibleItemsInfo.map {it.index}){
+            listState.animateScrollToItem(index, offset)
         }
     }
 
@@ -274,7 +274,7 @@ fun TrackScreen(modifier: Modifier = Modifier) {
         }
         if (showFolderPicker) {
             FolderPickerDialog(
-                folders = buildFolderList(allTracks, includeSubfolders),
+                folders = folders,
                 selected = selectedPaths,
                 includeSubfolders = includeSubfolders,
                 onToggleSubfolders = { includeSubfolders = !includeSubfolders },
