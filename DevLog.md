@@ -495,3 +495,42 @@ LaunchedEffect(currentTrackId, tracks) {
 - **Two different "queue" ideas:** tapping a track now queues only the *filtered* list, while the service restores whatever queue was saved. That's fine for now, but keep it in mind for IDEAS.md #3 (play a directory as its own queue).
 - **Folder counts are computed on every recomposition while the dialog is open.** `buildFolderList` loops over all tracks for each folder. That's fine for a few thousand songs; wrap it in `remember(allTracks, includeSubfolders)` if it gets slow.
 - Still open: "Close" wipes the saved queue, the outdated "decoder" comment above `DisposableEffect`, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
+
+---
+
+## 2026-11-13 (later) — Previous/Next, repeat mode, seek bar with time, centered auto-scroll
+
+### Added: `MainActivity.kt`, Previous / Play-Pause / Next in `NowPlayingBar`
+- The bar now has three buttons, `◀`, `▶`/`⏸` and `▶▶`. They call `seekToPreviousMediaItem()` and `seekToNextMediaItem()` on the controller.
+- The callbacks are created in `TrackScreen` and passed in as parameters (state hoisting). The bar's buttons can only use the bar's own parameters. When the buttons were first placed in `TrackScreen`, `onPreviousClick` etc. were unresolved because those names only exist inside `NowPlayingBar`.
+
+### Added: a repeat mode button (Off → All → One)
+- `repeatMode` holds a `Player.REPEAT_MODE_*` constant. A `when` picks the next mode and the button's label, and the mode goes to `controller?.repeatMode`.
+- `syncFromPlayer` reads `p.repeatMode` on connect, so the button shows the right mode when you return to the app.
+
+### Added: a seek bar with current time / track length
+- **Polling the position:** `Player` has no "position changed" callback, so a `LaunchedEffect(controller, isPlaying)` loop reads `currentPosition` and `duration` every 500 ms.
+  - `delay(500)` comes from `kotlinx.coroutines` and needs an import. It suspends only this coroutine, like `await Task.Delay` in C#, so the UI keeps drawing.
+  - The loop stops by itself when the effect is cancelled (a key changes or the screen leaves composition).
+  - `duration` is negative (`C.TIME_UNSET`) until the track is prepared, so `coerceAtLeast(0L)` clamps it to 0.
+- **`Slider`** works with a 0..1 fraction: `position / duration`, guarded with `duration > 0` against division by zero.
+- **Dragging without jumping:**
+  - `onValueChange` fires on every drag step and only stores `seekPosition` and sets `isSeeking = true`.
+  - `onValueChangeFinished` fires once on release and does the real `seekTo`.
+  - While `isSeeking` is true, the poll loop doesn't overwrite `position`. Without this, the thumb snapped back under the finger and the controller got flooded with seek calls.
+- **Time labels:** a `Row` with `Arrangement.SpaceBetween` puts the current time on the left and the length on the right. While you drag, the left label follows the thumb.
+- `formatTime(ms)` is a plain (non-`@Composable`) function that turns `83500` into `"1:23"`. `"%d:%02d".format(...)` uses printf-style specifiers, and `%02d` adds the leading zero (`1:05`).
+
+### Changed
+- **Auto-scroll centers the playing track** instead of putting it at the top. The offset is `-(viewportHeight / 2 - itemHeight / 2)`, read from `listState.layoutInfo`.
+- **The folder list is cached:** `remember(allTracks, includeSubfolders) { buildFolderList(...) }`. This resolves the "computed on every recomposition" note from the previous entry.
+- **`contentPadding` went from 72.dp to 140.dp**, because the bar grew with the slider and time labels.
+
+### Bugs fixed during development
+- **`index` underlined in the scroll effect:** the `val index = ...` line was deleted during a rewrite, and the IDE auto-imported Guava's `Multimaps.index` function to "resolve" the name. If the IDE suggests an import for something that should be a local variable, the variable is missing.
+- **Buttons inside a button:** Previous/Next were first placed inside the Repeat button's content lambda, which is that button's *label*.
+- **The Slider was inside the `Row`**, competing for width with the title and buttons. It was moved into the outer `Column`, above the row.
+
+### Known issues / next steps
+- The poll loop keeps running while paused (`while (true)`). A `do { ... } while (isPlaying)` would stop it after one last update.
+- Still open: empty filter result hint, "Close" wipes the saved queue, the outdated comment above `DisposableEffect`, `STATE_ENDED` after the last track, `loadTracks` on the main thread.

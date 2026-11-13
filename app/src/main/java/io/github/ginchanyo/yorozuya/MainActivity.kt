@@ -1,6 +1,7 @@
 package io.github.ginchanyo.yorozuya
 
 import android.Manifest
+import android.R
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
@@ -11,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,6 +29,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +52,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
 import io.github.ginchanyo.yorozuya.ui.theme.YorozuyaTheme
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,7 +86,13 @@ fun TrackScreen(modifier: Modifier = Modifier) {
     var includeSubfolders by remember { mutableStateOf(false) }
     var repeatMode by remember {mutableStateOf(Player.REPEAT_MODE_OFF)}
     val prefs = remember { context.getSharedPreferences("library", Context.MODE_PRIVATE) }
-
+    // Playback position and track length in milliseconds, polled from the controller (see LaunchedEffect below)
+    var position by remember {mutableStateOf(0L)}
+    var duration by remember { mutableStateOf(0L) }
+    // While the user drags the slider, the thumb follows the finger (seekPosition, 0..1 fraction)
+    // instead of the polled position; the real seek happens once, when the finger is released
+    var isSeeking by remember {mutableStateOf(false)}
+    var seekPosition by remember {mutableStateOf(0f)}
     val tracks = remember(allTracks, selectedPaths, includeSubfolders) {
         when {
             selectedPaths.isEmpty() -> allTracks
@@ -198,6 +208,22 @@ fun TrackScreen(modifier: Modifier = Modifier) {
             listState.animateScrollToItem(index, offset)
         }
     }
+    // Player has no "position changed" callback (it would fire constantly), so position is polled twice a second.
+    // Keys: restart when controller connects and on play/pause, so the value is fresh right after the change.
+    // The loop ends by itself when the effect is cancelled (key change or screen leaves composition).
+    LaunchedEffect(controller, isPlaying) {
+        val mc = controller ?:return@LaunchedEffect
+        while (true){
+            // Don't overwrite position while dragging, otherwise the thumb would jump back under the finger
+            if (!isSeeking){
+                position = mc.currentPosition
+            }
+            // duration is C.TIME_UNSET (negative) until the track is prepared; coerceAtLeast clamps it to 0
+            duration = mc.duration.coerceAtLeast(0L)
+            // delay - suspends this coroutine only, the main thread keeps drawing (like await Task.Delay in C#)
+            delay(500)
+        }
+    }
 
     // firstOrNull searches list for track with matching ID and returns null if not found.
     // Searched in allTracks, not filtered tracks: the bar must stay even if the playing song is outside selected folders
@@ -292,6 +318,30 @@ fun TrackScreen(modifier: Modifier = Modifier) {
                 onPlayPauseClick = {
                     val mc = controller ?: return@NowPlayingBar
                     if (mc.isPlaying) mc.pause() else mc.play()
+                },
+                // Slider works with 0..1 fraction; while dragging show the finger's value, otherwise the real one.
+                // duration > 0 check avoids division by zero before the track is prepared
+                progress = if (isSeeking){
+                    seekPosition
+                } else if (duration> 0){
+                    position.toFloat() / duration
+                } else 0f,
+                // Time label follows the thumb during drag, so the user sees where they'll land
+                positionMs = if (isSeeking) (seekPosition * duration).toLong() else position,
+                durationMs = duration,
+                // Called on every drag step: only remember the value, don't seek yet
+                onSeekChange = { fraction ->
+                    isSeeking = true
+                    seekPosition = fraction
+                },
+                // Called once when the finger is released: one real seek. position is set right away,
+                // so the thumb doesn't flash back to the old spot until the next poll
+                onSeekFinished = {
+                    if (duration > 0){
+                        controller?.seekTo((seekPosition * duration).toLong())
+                        position = (seekPosition * duration).toLong()
+                    }
+                    isSeeking =  false
                 },
                 // align exists only inside Box { } (extension available in BoxScope) - pins the bar to bottom center
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -415,6 +465,14 @@ fun NowPlayingBar(
     onPlayPauseClick: () -> Unit,
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
+    // 0..1 position of the slider thumb
+    progress: Float,
+    // Shown as text under the slider, in milliseconds
+    positionMs: Long,
+    durationMs: Long,
+    // (Float) -> Unit - function that takes the new slider fraction (like Action<float> in C#)
+    onSeekChange: (Float) -> Unit,
+    onSeekFinished: () -> Unit,
     // Convention: every reusable composable accepts a modifier, so the caller can position it (e.g. align)
     modifier: Modifier = Modifier
 ) {
@@ -425,34 +483,63 @@ fun NowPlayingBar(
         color = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 3.dp
     ) {
-        // Row - places children horizontally; CenterVertically aligns text and button on one middle line
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // weight(1f) - take all width left after other children (the button), pushing button to the right edge.
-            // Available only inside Row/Column scope, same idea as align in Box
-            Column(modifier = Modifier.weight(1f)) {
-                // maxLines = 1 + Ellipsis - long title is cut to one line and ends with "…"
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                // ?: (Elvis) - if artist is null, show fallback text
-                Text(
-                    text = track.artist ?: "Unknown Artist",
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+        // Column - slider on top, time labels under it, then the row with title and buttons
+        Column{
+            // Slider - draggable bar; value must be in 0..1 by default (valueRange can change that).
+            // onValueChange fires on every move, onValueChangeFinished once on release
+            Slider(
+                value = progress,
+                onValueChange = onSeekChange,
+                onValueChangeFinished = onSeekFinished,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            // SpaceBetween - first child at the left edge, last at the right edge, free space between them
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(text = formatTime(positionMs), style = MaterialTheme.typography.labelSmall)
+                Text(text = formatTime(durationMs), style = MaterialTheme.typography.labelSmall)
             }
-            TextButton(onClick = onPreviousClick){Text("◀")}
-            TextButton(onClick = onPlayPauseClick){Text(if (isPlaying)"⏸" else "▶")}
-            TextButton(onClick = onNextClick){Text("▶▶")}
+            // Row - places children horizontally; CenterVertically aligns text and buttons on one middle line
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            )
+            {
+                // weight(1f) - take all width left after other children (the button), pushing button to the right edge.
+                // Available only inside Row/Column scope, same idea as align in Box
+                Column(modifier = Modifier.weight(1f)) {
+                    // maxLines = 1 + Ellipsis - long title is cut to one line and ends with "…"
+                    Text(
+                        text = track.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    // ?: (Elvis) - if artist is null, show fallback text
+                    Text(
+                        text = track.artist ?: "Unknown Artist",
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                TextButton(onClick = onPreviousClick){Text("◀")}
+                TextButton(onClick = onPlayPauseClick){Text(if (isPlaying)"⏸" else "▶")}
+                TextButton(onClick = onNextClick){Text("▶▶")}
+            }
         }
     }
+}
+
+// 83500 ms -> "1:23". Plain function, not @Composable - only formats data.
+// "%d:%02d" - same format specifiers as printf in C: %02d pads seconds with a leading zero ("1:05", not "1:5")
+fun formatTime(ms: Long): String {
+    val totalSeconds = ms / 1000
+    return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
 }
 
 @Composable
@@ -469,7 +556,8 @@ fun TrackList(
         state = listState,
         // contentPadding - empty space added after the last item (inside scrollable area, unlike Modifier.padding),
         // so last track can be scrolled out from under NowPlayingBar
-        contentPadding = PaddingValues(bottom = 72.dp),
+        // 140.dp - bar grew with the slider and time labels; re-check on device if the bar changes again
+        contentPadding = PaddingValues(bottom = 140.dp),
         modifier = modifier
     ) {
         items(tracks) { track ->
