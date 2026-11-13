@@ -80,6 +80,7 @@ fun TrackScreen(modifier: Modifier = Modifier) {
     var selectedPaths by remember { mutableStateOf(emptySet<String>()) }
     var showFolderPicker by remember { mutableStateOf(false) }
     var includeSubfolders by remember { mutableStateOf(false) }
+    var repeatMode by remember {mutableStateOf(Player.REPEAT_MODE_OFF)}
     val prefs = remember { context.getSharedPreferences("library", Context.MODE_PRIVATE) }
 
     val tracks = remember(allTracks, selectedPaths, includeSubfolders) {
@@ -120,6 +121,7 @@ fun TrackScreen(modifier: Modifier = Modifier) {
             shuffleEnabled = p.shuffleModeEnabled
             currentTrackId = p.currentMediaItem?.mediaId?.toLongOrNull()
             isPlaying = p.isPlaying
+            repeatMode = p.repeatMode
         }
 
         future.addListener(
@@ -219,7 +221,28 @@ fun TrackScreen(modifier: Modifier = Modifier) {
                 TextButton(onClick = { showFolderPicker = true }) {
                     Text("Directories")
                 }
+                TextButton(
+                    onClick = {
+                        val next = when (repeatMode){
+                            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                            else -> Player.REPEAT_MODE_OFF
+                        }
+                        repeatMode = next
+                        controller?.repeatMode = next
+                    }
+                )
+                {
+                    Text(
+                        when (repeatMode){
+                            Player.REPEAT_MODE_ALL -> "Repeat: All"
+                            Player.REPEAT_MODE_ONE -> "Repeat: One"
+                            else -> "Repeat: Off"
+                        }
+                    )
+                }
             }
+
             if (!hasPermission) {
                 Text(
                     text = "Access to media on device is required",
@@ -264,6 +287,8 @@ fun TrackScreen(modifier: Modifier = Modifier) {
             NowPlayingBar(
                 track = currentTrack,
                 isPlaying = isPlaying,
+                onPreviousClick = {controller?.seekToPreviousMediaItem()},
+                onNextClick = {controller?.seekToNextMediaItem()},
                 onPlayPauseClick = {
                     val mc = controller ?: return@NowPlayingBar
                     if (mc.isPlaying) mc.pause() else mc.play()
@@ -388,6 +413,8 @@ fun NowPlayingBar(
     isPlaying: Boolean,
     // () -> Unit - function type: takes nothing, returns nothing (like Action in C#)
     onPlayPauseClick: () -> Unit,
+    onPreviousClick: () -> Unit,
+    onNextClick: () -> Unit,
     // Convention: every reusable composable accepts a modifier, so the caller can position it (e.g. align)
     modifier: Modifier = Modifier
 ) {
@@ -421,9 +448,9 @@ fun NowPlayingBar(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            TextButton(onClick = onPlayPauseClick) {
-                Text(if (isPlaying) "Pause" else "Play")
-            }
+            TextButton(onClick = onPreviousClick){Text("◀")}
+            TextButton(onClick = onPlayPauseClick){Text(if (isPlaying)"⏸" else "▶")}
+            TextButton(onClick = onNextClick){Text("▶▶")}
         }
     }
 }
