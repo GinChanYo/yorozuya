@@ -8,3 +8,5 @@
 6. One the first app setup app should ask user to point to the songs' directory. If user does not have any dedicated song directory on the phone, or hasn't stored them locally before, suggest creating custom "yorozuya_songs/" or something similar.
 7. In addition to simple lyrics scraping, provide feature to translate/transliterate any non-latin song lyrics. For example for japanese songs use romaji. One option is to use Kuromoji, but if anything better appears, swap.
 8. For lyrics there should be option to either create .lrc file, or embed them to the song directly in the app. For lyrics there will be dedicated directory. 
+9. Add customizable navigation bar
+10. Implement offline/online lyrics translation and save it locally if needed
