@@ -26,6 +26,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -40,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -54,13 +57,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             YorozuyaTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    TrackScreen(modifier = Modifier.padding(innerPadding))
+                AppScaffold()
                 }
             }
         }
     }
-}
+
 
 
 // @Composable - function that describes the state of the screen and does NOT build it.
@@ -68,7 +70,7 @@ class MainActivity : ComponentActivity() {
 // If I Kept "var tracks = emptyList<Track>()" then on each call this variable would have been recreated and value lost.
 // Need a way to survive recomposition, that's why is used "remember".
 @Composable
-fun TrackScreen(modifier: Modifier = Modifier) {
+fun TrackScreen(player: PlayerState, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     // All playback state and controls live in PlayerState (PlayerConnection.kt); here only read fields and call methods
     val player = rememberPlayerState()
@@ -272,5 +274,47 @@ fun TrackScreen(modifier: Modifier = Modifier) {
                 }
             )
         }
+    }
+}
+
+@Composable
+fun AppScaffold(){
+    var currentTab by remember {mutableStateOf(Tab.QUEUE)}
+    val player = rememberPlayerState()
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        bottomBar = {
+            NavigationBar {
+                Tab.entries.forEach { tab ->
+                    NavigationBarItem(
+                        selected = currentTab == tab,
+                        onClick = {currentTab = tab},
+                        icon = {Text(tab.label)},
+                        label = null
+                    )
+                }
+            }
+        }
+    ){ innerPadding ->
+        Box(modifier = Modifier.padding(innerPadding)){
+            when (currentTab){
+                Tab.QUEUE -> TrackScreen(player = player)
+                Tab.NOW_PLAYING -> Placeholder("Now Playing")
+                Tab.PLAYLISTS -> Placeholder("Playlists")
+                Tab.STORAGE -> Placeholder("Folders")
+                Tab.DOWNLOADER -> Placeholder("Downloader")
+            }
+        }
+    }
+}
+
+@Composable
+fun Placeholder(name: String){
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ){
+        Text("$name - in development")
     }
 }
