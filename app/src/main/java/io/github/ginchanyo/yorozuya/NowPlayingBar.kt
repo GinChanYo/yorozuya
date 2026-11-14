@@ -16,6 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
+// Mini player at the bottom of the screen: title, artist and Play/Pause button.
+// It doesn't know about the controller: it only gets data and a callback (onPlayPauseClick),
+// so the parent decides what a click does. This is "state hoisting" - common Compose pattern.
 @Composable
 fun NowPlayingBar(
     track: Track,

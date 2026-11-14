@@ -42,21 +42,28 @@ class MainActivity : ComponentActivity() {
         setContent {
             YorozuyaTheme {
                 AppScaffold()
-                }
             }
         }
     }
-
-
+}
 
 // @Composable - function that describes the state of the screen and does NOT build it.
 // When data changes, Compose calls function again - it's called "recomposition".
 // If I Kept "var tracks = emptyList<Track>()" then on each call this variable would have been recreated and value lost.
 // Need a way to survive recomposition, that's why is used "remember".
+// Queue tab: folder filter, track list and mini player. Playback state and the full track list come from
+// AppScaffold as parameters (read-only here) - this screen only owns what nobody else needs: the folder filter
 @Composable
-fun TrackScreen(player: PlayerState, allTracks: List<Track>, hasPermission: Boolean, modifier: Modifier = Modifier) {
+fun TrackScreen(
+    player: PlayerState,
+    allTracks: List<Track>,
+    hasPermission: Boolean,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("library", Context.MODE_PRIVATE) }
+    // Folder filter is read from prefs right in the initial value: remember's block runs once, when the screen appears.
+    // Saved in FolderPickerDialog's onDismiss; without reading it back the checkboxes would reset on every return
     var selectedPaths by remember { mutableStateOf(prefs.getStringSet("paths", emptySet()) ?: emptySet()) }
     var showFolderPicker by remember { mutableStateOf(false) }
     var includeSubfolders by remember { mutableStateOf(prefs.getBoolean("subfolders", false)) }
@@ -77,11 +84,13 @@ fun TrackScreen(player: PlayerState, allTracks: List<Track>, hasPermission: Bool
     val folders = remember(allTracks, includeSubfolders){
         buildFolderList(allTracks, includeSubfolders)
     }
-    val listState = rememberLazyListState() // this object keeps scroll position and allows to control it
+    // this object keeps scroll position and allows to control it
+    val listState = rememberLazyListState()
+
     // Scroll list to the playing track. Two keys: re-run when track changes AND when tracks are loaded
     // (on app return currentTrackId may arrive before the list, then index would be -1 and nothing would scroll).
     // LaunchedEffect body is a coroutine, that's why suspend function scrollToItem can be called here
-      LaunchedEffect(player.currentTrackId, tracks) {
+    LaunchedEffect(player.currentTrackId, tracks) {
         val index = tracks.indexOfFirst { it.id == player.currentTrackId }
         if (index < 0) return@LaunchedEffect
 
@@ -205,6 +214,10 @@ fun TrackScreen(player: PlayerState, allTracks: List<Track>, hasPermission: Bool
     }
 }
 
+// Root of the UI: bottom navigation + the screen of the selected tab.
+// State that more than one tab needs (player, track list, permission) lives here and is passed down -
+// "state goes down, events go up". Tab screens leave composition when switched away, so anything kept
+// only inside them is lost; anything kept here survives tab switches
 @Composable
 fun AppScaffold(){
     var currentTab by remember { mutableStateOf(Tab.QUEUE) }
@@ -217,7 +230,7 @@ fun AppScaffold(){
     // "by" keyword is properties delegation. Without it, I would have had to write tracks.value on each addressation;
     // with it variable behaves as an ordinary one. Have to remember template:
     // "var x by remember {mutableStateOf(...)} I'll use it a lot."
-     var hasPermission by remember {
+    var hasPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
                 context,
@@ -225,13 +238,13 @@ fun AppScaffold(){
             ) == PackageManager.PERMISSION_GRANTED
         )
     }
-    // LaunchedEffect is needed for actions, that will occur once, and not on each redrawing. Permission request is exactly like that:
-    // if it's called in function's body, dialogue will appear infinite amount of times. Argument in brackets is a key:
-    // Unit means: "execute once on screen occur", and "hasPermission" - "every time that this value changes, execute again".
+    // Launcher for the system permission dialog; the lambda receives the user's answer
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted -> hasPermission = granted }
-    // (your LaunchedEffect comment about Unit and keys goes here)
+    // LaunchedEffect is needed for actions, that will occur once, and not on each redrawing. Permission request is exactly like that:
+    // if it's called in function's body, dialogue will appear infinite amount of times. Argument in brackets is a key:
+    // Unit means: "execute once on screen occur", and "hasPermission" - "every time that this value changes, execute again".
     LaunchedEffect(Unit) {
         if (!hasPermission) {
             launcher.launch(Manifest.permission.READ_MEDIA_AUDIO)
@@ -240,11 +253,15 @@ fun AppScaffold(){
     LaunchedEffect(hasPermission) {
         if (hasPermission) allTracks = loadTracks(context)
     }
+    // Searched in allTracks, not filtered tracks: the playing song must show even if it's outside selected folders
     val currentTrack = allTracks.firstOrNull { it.id == player.currentTrackId }
+    // Scaffold - Material screen skeleton with slots (topBar, bottomBar...); innerPadding is the space
+    // the bars take, so content isn't drawn under them
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
             NavigationBar {
+                // entries - list of all enum values in declaration order (like Enum.GetValues in C#)
                 Tab.entries.forEach { tab ->
                     NavigationBarItem(
                         selected = currentTab == tab,
@@ -257,6 +274,7 @@ fun AppScaffold(){
         }
     ){ innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)){
+            // Only the selected tab's screen is in composition; when is exhaustive over the enum, so no else needed
             when (currentTab){
                 Tab.QUEUE -> TrackScreen(player = player, allTracks = allTracks, hasPermission = hasPermission)
                 Tab.NOW_PLAYING -> NowPlayingScreen(player = player, track = currentTrack)
@@ -268,6 +286,7 @@ fun AppScaffold(){
     }
 }
 
+// Temporary screen for tabs that aren't implemented yet
 @Composable
 fun Placeholder(name: String){
     Box(

@@ -534,3 +534,70 @@ LaunchedEffect(currentTrackId, tracks) {
 ### Known issues / next steps
 - The poll loop keeps running while paused (`while (true)`). A `do { ... } while (isPlaying)` would stop it after one last update.
 - Still open: empty filter result hint, "Close" wipes the saved queue, the outdated comment above `DisposableEffect`, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
+
+---
+
+## 2026-11-14 — Restore fixes, code split into files, `PlayerState`, bottom navigation, Now Playing tab
+
+### Fixed: `PlaybackService.kt`, "Close" no longer forgets the current song
+- **Cause:** the Close handler calls `stop()` and then `clearMediaItems()`. Clearing fires `onMediaItemTransition(null)` → `saveState()`, which saved an **empty** queue over the good one (and `onDestroy` saved it again).
+- **Fix:** `if (player.mediaItemCount == 0) return` at the top of `saveState()`. The `stop()` just before already triggers `onIsPlayingChanged(false)`, which saves the full queue and position.
+
+### Fixed: shuffle survives a full restart
+- New key `KEY_SHUFFLE`: `saveState()` writes `putBoolean(KEY_SHUFFLE, player.shuffleModeEnabled)`.
+- `restoreState()` sets `player.shuffleModeEnabled` **before** the empty-queue early return, so shuffle is restored even without a saved queue.
+- The service listener overrides `onShuffleModeEnabledChanged` → `saveState()`. Without it, pressing Shuffle only got saved by accident on the next track change or play/pause.
+- The UI needs nothing extra: `syncFrom` reads `shuffleModeEnabled` when the controller connects.
+
+### Changed: code split into files
+`MainActivity.kt` had grown to ~600 lines. It now holds only `MainActivity`, `TrackScreen`, `AppScaffold` and `Placeholder`. The rest moved out:
+- `NowPlayingBar.kt` — mini player + `formatTime`.
+- `TrackList.kt` — `TrackList` and `TrackRow`.
+- `FolderPicker.kt` — `buildFolderList` and `FolderPickerDialog`.
+- `PlayerConnection.kt` — `PlayerState` and `rememberPlayerState()` (below).
+- All files share the package `io.github.ginchanyo.yorozuya`, so they see each other's top-level functions without imports.
+
+### Added: `PlayerConnection.kt`, `PlayerState` + `rememberPlayerState()`
+- **`PlayerState`** is a class that holds all playback UI state (`controller`, `currentTrackId`, `isPlaying`, `shuffleEnabled`, `repeatMode`, `position`, `duration`) as `by mutableStateOf` fields, plus methods: `playQueue`, `togglePlayPause`, `next`, `previous`, `seekTo`, `toggleShuffle`, `cycleRepeat`. Screens call these instead of touching `MediaController` directly.
+  - `by mutableStateOf` works inside a class too: each field is observable on its own, so a composable redraws only when a field it reads changes.
+  - **`@Stable`** promises Compose that every change goes through state fields, so it can skip redrawing composables that got this object when nothing they read changed.
+- **`rememberPlayerState()`** follows the Compose naming convention for "create once, keep across recompositions" composables (like `rememberLazyListState()`). It returns a value, so its name starts lowercase.
+  - It contains the `DisposableEffect` that connects the `MediaController` (moved from `TrackScreen`) and a listener that now also handles `onShuffleModeEnabledChanged` and `onRepeatModeChanged`.
+  - The 500 ms position/duration polling loop moved here too, so it keeps running on any tab. `delay(500.milliseconds)` uses `kotlin.time.Duration` instead of a bare number.
+  - The `isSeeking` check was dropped from the loop: both screens show `seekPosition` while dragging, so it doesn't matter if `position` updates underneath.
+
+### Added: `Tabs.kt` + bottom navigation (`AppScaffold`)
+- `enum class Tab(val label: String)` with `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`. An enum in Kotlin can carry constructor properties (`label`).
+- `AppScaffold` draws a `Scaffold` with a `NavigationBar`. `Tab.entries.forEach` creates one `NavigationBarItem` per tab, and a `when (currentTab)` picks the screen. `when` over an enum is exhaustive, so no `else` is needed.
+- Unimplemented tabs show `Placeholder("... - in development")`.
+
+### Added: `NowPlayingScreen.kt`, the "Now" tab
+- A square artwork placeholder (`aspectRatio(1f)`), title (2 lines, centered), artist, album, then a `Spacer(Modifier.weight(1f))` that pushes the slider, time labels and controls to the bottom.
+- Controls: shuffle, previous, play/pause, next, repeat, all calling `PlayerState` methods. Emoji icons are written as surrogate pairs (`"🔀"`), because one emoji doesn't fit in a single UTF-16 `Char`.
+- `track: Track?` — when nothing is playing, the screen shows "Nothing is playing" and `return`s early. After that check Kotlin **smart-casts** `track` to non-null.
+- It has its own `isSeeking`/`seekPosition`: that's UI-only drag state of this screen, so it isn't in `PlayerState`.
+
+### Changed: state hoisting into `AppScaffold`
+- **Problem:** both tabs need the track list (`currentTrack` comes from it), but it lived inside `TrackScreen`. A tab's screen leaves composition when you switch away, so its `remember` values are lost — the list was reloaded from MediaStore on every return to Queue, and the polling loop stopped on the "Now" tab.
+- **Fix:** `allTracks`, `hasPermission`, the permission `launcher` and `loadTracks` moved up to `AppScaffold`, and are passed down as parameters: `TrackScreen(player, allTracks, hasPermission)`, `NowPlayingScreen(player, currentTrack)`. Rule: **state goes down, events go up**.
+- Parameters are read-only (`val`), so `TrackScreen` can't reassign `allTracks` — only the owner can.
+- The folder filter stays in `TrackScreen` (only Queue needs it). It is read from prefs right in `remember { mutableStateOf(prefs.get...) }`; the `remember` block runs once each time the screen appears. `prefs` must be declared above those lines.
+
+### Bugs fixed during development
+- **`enabled` / `mode` unresolved in listener overrides:** Android Studio generated the overrides with the interface's parameter names (`shuffleModeEnabled`, `repeatMode`), but the bodies used other names. `state.repeatMode = repeatMode` is fine: field of `state` on the left, parameter on the right (like `this.x = x` in C#).
+- **A second `PlayerState`:** `TrackScreen` received `player` as a parameter but still had `val player = rememberPlayerState()`, which hid the parameter and opened a second controller connection. Kotlin only warns about shadowing.
+- **Strange `align` parameter added to `TrackScreen`:** broken braces put `Modifier.align(...)` outside the `Box`, and an IDE quick-fix "created" it as a parameter. Fixing the braces made it unnecessary. If a quick-fix invents a parameter, look for a scope error first.
+- **`tracks.indexOf` without `(track)`:** a function reference is not a call.
+- **NowPlayingScreen didn't compile:** `modifier: Modifier = modifier` (default pointed at itself, must be `= Modifier`), a missing comma after `.padding(24.dp)`, and missing imports (Alt+Enter → Import).
+- **`remember` inside `LaunchedEffect`:** "@Composable invocations can only happen from the context of a @Composable function". A `LaunchedEffect` body is a coroutine, not a composable. And the `var` inside it would have been a new local variable that disappears when the block ends.
+- **Placeholder comments pasted as code** (`var hasPermission by remember { /* moved ... */ }`) gave "Property delegate must have a getValue method": an empty `remember {}` returns `Unit`, which can't be a delegate.
+- **Slider frozen:** when the polling loop moved, `state.position = mc.currentPosition` got deleted with the `isSeeking` check.
+
+### Cleanup (2026-11-15)
+- Comments moved to the code they describe (mini-player description was on `TrackList`, the `DisposableEffect` and polling notes were left in `MainActivity`), placeholder comments replaced, new comments for `AppScaffold`, `Scaffold`, `Tab.entries`, `NowPlayingScreen`. Indentation fixed in `MainActivity.onCreate` and `TrackScreen`.
+
+### Known issues / next steps
+- **Notification shows "Yorozuya is running" for some songs:** `MediaItem`s have no `MediaMetadata`, so the notification relies on file tags. Untagged files (often the long-named ones) get no title. Fix: `.setMediaMetadata(MediaMetadata.Builder().setTitle(...).setArtist(...).build())` in `PlayerState.playQueue`, and look titles up in `restoreState` too. A scrolling ("marquee") title isn't possible — the system draws media notifications.
+- **Repeat mode isn't saved across restarts** — same pattern as shuffle (`putInt` + `onRepeatModeChanged`).
+- **Repeat icons on the "Now" tab:** Off shows 🔂 and One shows 🔁 — check that's intended.
+- Still open: empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread.

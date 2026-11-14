@@ -27,21 +27,26 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 
-
+// "Now" tab: big artwork, title/artist/album, seek bar and all playback controls.
+// track is nullable - before anything was played there is no current track
 @Composable
 fun NowPlayingScreen(
     player: PlayerState,
     track: Track?,
     modifier: Modifier = Modifier
 ){
+    // Early return from a composable: draw the empty state and skip the rest.
+    // After this "if", Kotlin smart-casts track to non-null Track, so track.title below needs no "?."
     if (track == null){
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center){
             Text("Nothing is playing")
         }
         return
     }
+    // Own drag state, separate from the mini player's: same idea (thumb follows the finger, real seek on release),
+    // but it's UI-only state of this screen, so it isn't in PlayerState
     var isSeeking by remember { mutableStateOf(false) }
-    var seekPosition  by remember {mutableStateOf(0f)}
+    var seekPosition by remember { mutableStateOf(0f) }
 
     Column(
         modifier = modifier
@@ -53,6 +58,7 @@ fun NowPlayingScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                // aspectRatio(1f) - height = width
                 .aspectRatio(1f)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
@@ -78,9 +84,10 @@ fun NowPlayingScreen(
             style = MaterialTheme.typography.bodyMedium
         )
 
-        // weight(1f) on a spacer pushed everything below it to the bottom of the screen
+        // weight(1f) on a spacer pushes everything below it to the bottom of the screen
         Spacer(modifier = Modifier.weight(1f))
 
+        // Slider works with 0..1 fraction; duration > 0 check avoids division by zero before the track is prepared
         Slider(
             value = if (isSeeking){
                 seekPosition
@@ -112,11 +119,13 @@ fun NowPlayingScreen(
             )
             Text(text = formatTime(player.duration), style = MaterialTheme.typography.labelSmall)
         }
+        // SpaceEvenly - equal gaps between buttons and at both edges
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ){
+            // "\uD83D\uDD00" - emoji written as two UTF-16 code units (surrogate pair), because emoji don't fit in one Char
             TextButton(onClick = {player.toggleShuffle()}){
                 Text(if (player.shuffleEnabled) "\uD83D\uDD00" else "➡")
             }
@@ -128,8 +137,8 @@ fun NowPlayingScreen(
             TextButton(onClick = {player.cycleRepeat()}) {
                 Text(
                     when (player.repeatMode){
-                        Player.REPEAT_MODE_OFF -> "\uD83D\uDD01"
-                        Player.REPEAT_MODE_ONE -> "\uD83D\uDD02"
+                        Player.REPEAT_MODE_OFF -> "\uD83D\uDD02"
+                        Player.REPEAT_MODE_ONE -> "\uD83D\uDD01"
                         else -> "↪"
                     }
                 )

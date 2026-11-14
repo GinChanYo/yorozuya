@@ -26,7 +26,7 @@ class PlayerState{
     var isPlaying by mutableStateOf(false)
     var shuffleEnabled by mutableStateOf(false)
     var repeatMode by mutableStateOf(Player.REPEAT_MODE_OFF)
-    // Playback position and track length in milliseconds, polled from the controller (see LaunchedEffect in TrackScreen)
+    // Playback position and track length in milliseconds, polled from the controller (see LaunchedEffect in rememberPlayerState below)
     var position by mutableStateOf(0L)
     var duration by mutableStateOf(0L)
 
