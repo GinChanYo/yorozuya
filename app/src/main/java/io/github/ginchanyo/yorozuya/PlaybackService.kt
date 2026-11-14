@@ -38,13 +38,16 @@ class PlaybackService : MediaSessionService() {
         private const val KEY_QUEUE = "queue"
         private const val KEY_INDEX = "index"
         private const val KEY_POSITION = "position"
+
+        private const val KEY_SHUFFLE = "shuffle"
     }
 
     // Saves queue (as MediaStore ids), current track index and position, so playback can resume after restart
     private fun saveState(){
         // "?: return" (Elvis operator) - if session is already null, there is nothing to save, exit the function
         val player = mediaSession?.player ?: return
-        // 0 until n - range 0..n-1 (n excluded); map -> LINQ Select; result e.g. "12,57,103"
+        if(player.mediaItemCount == 0 ) return
+        // 0 until n - range 0...n-1 (n excluded); map -> LINQ Select; result e.g. "12,57,103"
         val ids = (0 until player.mediaItemCount)
             .map {player.getMediaItemAt(it).mediaId}
             .joinToString(",")
@@ -54,6 +57,7 @@ class PlaybackService : MediaSessionService() {
             .putString(KEY_QUEUE, ids)
             .putInt(KEY_INDEX, player.currentMediaItemIndex)
             .putLong(KEY_POSITION, player.currentPosition)
+            .putBoolean(KEY_SHUFFLE, player.shuffleModeEnabled)
             .apply()
     }
 
@@ -61,6 +65,7 @@ class PlaybackService : MediaSessionService() {
     private fun restoreState(player : Player){
         // null is the default value if key doesn't exist yet (first launch)
         val saved = prefs.getString(KEY_QUEUE, null)
+        player.shuffleModeEnabled = prefs.getBoolean(KEY_SHUFFLE, false)
         if (saved.isNullOrEmpty()) return
 
         // Base URI of all audio files; id appended to it gives URI of one concrete track
@@ -135,6 +140,10 @@ class PlaybackService : MediaSessionService() {
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                saveState()
+            }
+
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                 saveState()
             }
         })
