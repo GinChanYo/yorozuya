@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -58,6 +59,7 @@ fun TrackScreen(
     player: PlayerState,
     allTracks: List<Track>,
     hasPermission: Boolean,
+    listState: LazyListState,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -84,9 +86,6 @@ fun TrackScreen(
     val folders = remember(allTracks, includeSubfolders){
         buildFolderList(allTracks, includeSubfolders)
     }
-    // this object keeps scroll position and allows to control it
-    val listState = rememberLazyListState()
-
     // Scroll list to the playing track. Two keys: re-run when track changes AND when tracks are loaded
     // (on app return currentTrackId may arrive before the list, then index would be -1 and nothing would scroll).
     // LaunchedEffect body is a coroutine, that's why suspend function scrollToItem can be called here
@@ -224,6 +223,9 @@ fun AppScaffold(){
     val context = LocalContext.current
     // All playback state and controls live in PlayerState (PlayerConnection.kt); here only read fields and call methods
     val player = rememberPlayerState()
+    // Keeps scroll position (and last visible items) of the Queue list. Lives here, not in TrackScreen,
+    // so it survives tab switches: the list reopens where it was and auto-scroll doesn't fire again
+    val listState = rememberLazyListState()
     var allTracks by remember { mutableStateOf(emptyList<Track>()) }
     // mutableStateOf makes value observable. Assigning new - Compose notices it and redraws those places where it's read.
     // That's the whole trick: no updateUI() needed, just variable change.
@@ -276,7 +278,7 @@ fun AppScaffold(){
         Box(modifier = Modifier.padding(innerPadding)){
             // Only the selected tab's screen is in composition; when is exhaustive over the enum, so no else needed
             when (currentTab){
-                Tab.QUEUE -> TrackScreen(player = player, allTracks = allTracks, hasPermission = hasPermission)
+                Tab.QUEUE -> TrackScreen(player = player, allTracks = allTracks, hasPermission = hasPermission, listState = listState)
                 Tab.NOW_PLAYING -> NowPlayingScreen(player = player, track = currentTrack)
                 Tab.PLAYLISTS -> Placeholder("Playlists")
                 Tab.STORAGE -> Placeholder("Folders")

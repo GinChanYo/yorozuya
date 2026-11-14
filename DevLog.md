@@ -617,5 +617,12 @@ This resolves the "Repeat mode isn't saved" note from the previous entry. Same f
 ### Cleanup
 - Comments moved to the code they describe (mini-player description was on `TrackList`, the `DisposableEffect` and polling notes were left in `MainActivity`), placeholder comments replaced, new comments for `AppScaffold`, `Scaffold`, `Tab.entries`, `NowPlayingScreen`. Indentation fixed in `MainActivity.onCreate` and `TrackScreen`.
 
+### Fixed: `MainActivity.kt`, Queue list no longer jumps when returning from another tab
+- **Symptom:** going from "Now" back to Queue, the list started at the top and then animated down to the playing song, which looked like a reload.
+- **Cause:** a tab's screen leaves composition when switched away, so `TrackScreen`'s `rememberLazyListState()` was recreated at position 0 with no knowledge of visible rows. The auto-scroll `LaunchedEffect` also starts again on every appearance, saw the current track as "not visible" and scrolled to it. (`allTracks` was already hoisted, so MediaStore wasn't actually re-queried.)
+- **Fix:** same hoisting as `allTracks`. `val listState = rememberLazyListState()` moved to `AppScaffold` and is passed to `TrackScreen` as a `listState: LazyListState` parameter.
+- **Why it's enough:** the `LazyListState` object keeps both the scroll position and its last `layoutInfo` (the rows that were visible). On return the list opens where it was, the effect runs but `index !in visibleItemsInfo` is false, so it doesn't scroll. If the song changed while on another tab, the new one isn't visible, so it still scrolls to it.
+- If it still jumps on the device, the fallback is a "last scrolled-to track id" check inside the effect.
+
 ### Known issues / next steps
 - Still open: notification title for untagged files (`MediaMetadata`), repeat icons on the "Now" tab, empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
