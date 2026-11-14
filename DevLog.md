@@ -593,11 +593,29 @@ LaunchedEffect(currentTrackId, tracks) {
 - **Placeholder comments pasted as code** (`var hasPermission by remember { /* moved ... */ }`) gave "Property delegate must have a getValue method": an empty `remember {}` returns `Unit`, which can't be a delegate.
 - **Slider frozen:** when the polling loop moved, `state.position = mc.currentPosition` got deleted with the `isSeeking` check.
 
-### Cleanup (2026-11-15)
-- Comments moved to the code they describe (mini-player description was on `TrackList`, the `DisposableEffect` and polling notes were left in `MainActivity`), placeholder comments replaced, new comments for `AppScaffold`, `Scaffold`, `Tab.entries`, `NowPlayingScreen`. Indentation fixed in `MainActivity.onCreate` and `TrackScreen`.
-
 ### Known issues / next steps
 - **Notification shows "Yorozuya is running" for some songs:** `MediaItem`s have no `MediaMetadata`, so the notification relies on file tags. Untagged files (often the long-named ones) get no title. Fix: `.setMediaMetadata(MediaMetadata.Builder().setTitle(...).setArtist(...).build())` in `PlayerState.playQueue`, and look titles up in `restoreState` too. A scrolling ("marquee") title isn't possible — the system draws media notifications.
 - **Repeat mode isn't saved across restarts** — same pattern as shuffle (`putInt` + `onRepeatModeChanged`).
 - **Repeat icons on the "Now" tab:** Off shows 🔂 and One shows 🔁 — check that's intended.
 - Still open: empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
+
+---
+
+## 2026-11-15 — Repeat mode survives a restart, comment cleanup
+
+### Fixed: `PlaybackService.kt`, repeat mode is saved like shuffle
+This resolves the "Repeat mode isn't saved" note from the previous entry. Same four steps as shuffle:
+- New key `KEY_REPEAT = "repeat"`.
+- `saveState()` writes `putInt(KEY_REPEAT, player.repeatMode)`.
+- `restoreState()` sets `player.repeatMode = prefs.getInt(KEY_REPEAT, Player.REPEAT_MODE_OFF)` before the empty-queue early return.
+- The service listener overrides `onRepeatModeChanged` → `saveState()`.
+- **Restore order is safe:** setting `repeatMode` (or shuffle) in `restoreState` fires the listener → `saveState()`, but the queue is still empty at that moment, so the `mediaItemCount == 0` guard returns early and nothing good gets overwritten.
+
+### Bug fixed during development
+- **"Null cannot be a value of a non-null type 'Int'":** `prefs.getInt(KEY_REPEAT, null)`. The second argument is the default for a missing key, and its type is `Int`, which can't be null in Kotlin (only `Int?` can, like `int` vs `int?` in C#). `getString(key, null)` works only because its default is `String?`. `getInt`/`getLong`/`getBoolean` always need a real value. `Player.REPEAT_MODE_OFF` (= 0) is used instead of a bare `0` so the meaning is clear.
+
+### Cleanup
+- Comments moved to the code they describe (mini-player description was on `TrackList`, the `DisposableEffect` and polling notes were left in `MainActivity`), placeholder comments replaced, new comments for `AppScaffold`, `Scaffold`, `Tab.entries`, `NowPlayingScreen`. Indentation fixed in `MainActivity.onCreate` and `TrackScreen`.
+
+### Known issues / next steps
+- Still open: notification title for untagged files (`MediaMetadata`), repeat icons on the "Now" tab, empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
