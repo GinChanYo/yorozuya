@@ -9,6 +9,8 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 // Holds everything the UI needs to know about playback.
 // Screens read these fields and call the methods; none of them touch MediaController directly.
@@ -97,6 +99,20 @@ fun rememberPlayerState(): PlayerState{
     val context = LocalContext.current
     val state = remember {PlayerState()}
 
+    // Player has no "position changed" callback (it would fire constantly), so position is polled twice a second.
+    // Keys: restart when controller connects and on play/pause, so the value is fresh right after the change.
+    // The loop ends by itself when the effect is cancelled (key change or screen leaves composition).
+    LaunchedEffect(state.controller, state.isPlaying) {
+        val mc = state.controller ?: return@LaunchedEffect
+        while (true){
+            state.position = mc.currentPosition
+            // duration is C.TIME_UNSET (negative) until the track is prepared; coerceAtLeast clamps it to 0
+            state.duration = mc.duration.coerceAtLeast(0L)
+            // delay - suspends this coroutine only, the main thread keeps drawing (like await Task.Delay in C#).
+            // 500.milliseconds - extension property turning Int into kotlin.time.Duration; clearer than bare 500
+            delay(500.milliseconds)
+        }
+    }
     // DisposableEffect - is like a brother of LaunchedEffect, but with cleaning.
     // onDispose block executed when screen disappears. Controller holds a connection to the service - if not
     // released, it leaks. Anything that is required to close, is closed with DisposableEffect
