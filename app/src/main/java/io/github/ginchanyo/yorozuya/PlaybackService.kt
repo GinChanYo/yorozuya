@@ -38,8 +38,8 @@ class PlaybackService : MediaSessionService() {
         private const val KEY_QUEUE = "queue"
         private const val KEY_INDEX = "index"
         private const val KEY_POSITION = "position"
-
         private const val KEY_SHUFFLE = "shuffle"
+        private const val KEY_REPEAT = "repeat"
     }
 
     // Saves queue (as MediaStore ids), current track index and position, so playback can resume after restart
@@ -58,6 +58,7 @@ class PlaybackService : MediaSessionService() {
             .putInt(KEY_INDEX, player.currentMediaItemIndex)
             .putLong(KEY_POSITION, player.currentPosition)
             .putBoolean(KEY_SHUFFLE, player.shuffleModeEnabled)
+            .putInt(KEY_REPEAT, player.repeatMode)
             .apply()
     }
 
@@ -66,6 +67,7 @@ class PlaybackService : MediaSessionService() {
         // null is the default value if key doesn't exist yet (first launch)
         val saved = prefs.getString(KEY_QUEUE, null)
         player.shuffleModeEnabled = prefs.getBoolean(KEY_SHUFFLE, false)
+        player.repeatMode = prefs.getInt(KEY_REPEAT, Player.REPEAT_MODE_OFF)
         if (saved.isNullOrEmpty()) return
 
         // Base URI of all audio files; id appended to it gives URI of one concrete track
@@ -144,6 +146,10 @@ class PlaybackService : MediaSessionService() {
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                saveState()
+            }
+
+            override fun onRepeatModeChanged(repeatMode: Int) {
                 saveState()
             }
         })
