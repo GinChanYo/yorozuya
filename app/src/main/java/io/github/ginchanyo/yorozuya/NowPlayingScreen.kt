@@ -136,9 +136,9 @@ fun NowPlayingScreen(
             TextButton(onClick = {player.next()}) {Text("▶▶")}
             TextButton(onClick = {player.cycleRepeat()}) {
                 Text(
-                    when (player.repeatMode){
-                        Player.REPEAT_MODE_OFF -> "\uD83D\uDD02"
-                        Player.REPEAT_MODE_ONE -> "\uD83D\uDD01"
+                    when (player.repeatMode) {
+                        Player.REPEAT_MODE_ALL -> "\uD83D\uDD01"
+                        Player.REPEAT_MODE_ONE -> "\uD83D\uDD02"
                         else -> "↪"
                     }
                 )
