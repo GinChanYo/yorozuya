@@ -25,6 +25,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `companion object` | Holder for "static" members. |
 | `const val` | Compile-time constant (C# `const`), primitives/String only. |
 | `private` | Visible only inside the class/file. |
+| `class A(private val x: T)` | Constructor parameter that is also a field (C# primary constructor). |
+| `var x ... private set` | Public getter, private setter: anyone reads, only the class assigns. |
 | `lateinit var` | Non-null `var` assigned later (e.g. in `onCreate`), not in constructor. |
 | `inner class` | Nested class with access to the outer instance (plain nested = C# static nested). |
 | `object : Interface { }` | Anonymous object implementing an interface. |
@@ -57,7 +59,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 |---|---|
 | `listOf`, `emptyList()`, `emptySet()` | Immutable collections. |
 | `mutableListOf<T>()`, `+=` | Mutable list, add element. |
-| `set + x`, `set - x` | New set with/without element. |
+| `set + x`, `set - x` | New set with/without element (the old set is unchanged; a new object is what `mutableStateOf` notices). |
 | `map { }` | Transform each item (`Select`). |
 | `mapNotNull { }` | `map` dropping nulls. |
 | `flatMap { }` | Each item → list, merged (`SelectMany`). |
@@ -206,7 +208,6 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `TextButton(onClick) { }` | Flat button with content. |
 | `Slider(value, onValueChange, onValueChangeFinished)` | Draggable 0..1 bar. |
 | `Checkbox(checked, onCheckedChange)` | Checkbox. |
-| `AlertDialog(onDismissRequest, title, text, confirmButton)` | Dialog with slots. |
 | `HorizontalDivider()` | Horizontal line. |
 
 ## 10. Media3 (playback)
@@ -260,8 +261,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `TrackLoader.kt` | `loadTracks(context): List<Track>` | Query MediaStore for music. |
 | `Tabs.kt` | `enum class Tab(label)` | `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`. |
 | `MainActivity.kt` | `MainActivity` | Entry point; `setContent { YorozuyaTheme { AppScaffold() } }`. |
-| | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState`. |
-| | `TrackScreen(player, allTracks, currentTrack, hasPermission, listState)` | Queue tab: buttons, folder filter, list, mini player, auto-scroll. |
+| | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState`, `library`, filtered `tracks`. |
+| | `TrackScreen(player, tracks, currentTrack, hasPermission, listState)` | Queue tab: buttons, (already filtered) list, mini player, auto-scroll. |
 | | `Placeholder(name)` | Stub screen for unfinished tabs. |
 | `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick)` | Scrollable track list. |
 | | `TrackRow(track, isCurrent, isPlaying, onClick)` | One row: cover + title/artist. |
@@ -271,8 +272,12 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `NowPlayingScreen.kt` | `NowPlayingScreen(player, track?)` | "Now" tab: big cover, info, slider, all controls. |
 | `Artwork.kt` | `rememberArtwork(uri, sizePx): ImageBitmap?` | Load embedded cover off the main thread. |
 | | `ArtworkThumb(uri, size, sizePx, modifier)` | Small rounded cover with "♪" fallback. |
-| `FolderPicker.kt` | `buildFolderList(tracks, includeSubfolders)` | `(path, count)` pairs for the picker. |
-| | `FolderPickerDialog(...)` | Folder selection dialog. |
+| `FolderPicker.kt` | `buildFolderList(tracks, includeSubfolders)` | `(path, count)` pairs for the Folders tab. |
+| | `FoldersScreen(allTracks, library)` | "Folders" tab: subfolders checkbox + folder checkbox list. |
+| `LibraryFilter.kt` | `class LibraryFilter(prefs)` | Folder filter state: `selectedPaths`, `includeSubfolders` (both `private set`). |
+| | `togglePath(path)`, `toggleSubfolders()` | Change the filter and save to prefs immediately. |
+| | `filter(tracks)` | Apply the filter to a track list. |
+| | `rememberLibraryFilter()` | Create once, keep across recompositions. |
 | `PlayerConnection.kt` | `class PlayerState` | UI-side playback state: `controller`, `currentTrackId`, `isPlaying`, `shuffleEnabled`, `repeatMode`, `position`, `duration`. |
 | | `syncFrom(p)` | Copy current state after connecting. |
 | | `playQueue(tracks, startIndex)` | Replace queue and play. |
@@ -281,4 +286,4 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `PlaybackService.kt` | `PlaybackService : MediaSessionService` | Owns `ExoPlayer` and `MediaSession`, notification, "Close" button. |
 | | `saveState()` / `restoreState(player)` | Persist queue, index, position, shuffle, repeat in prefs `playback_state`. |
 | | `CallBack` | Session callback: allows and handles `stopCommand`. |
-| Prefs `library` | `paths` (string set), `subfolders` (bool) | Folder filter. |
+| Prefs `library` | `paths` (string set), `subfolders` (bool) | Folder filter, read/written by `LibraryFilter`. |

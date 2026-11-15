@@ -1,7 +1,6 @@
 package io.github.ginchanyo.yorozuya
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -52,37 +51,17 @@ class MainActivity : ComponentActivity() {
 // When data changes, Compose calls function again - it's called "recomposition".
 // If I Kept "var tracks = emptyList<Track>()" then on each call this variable would have been recreated and value lost.
 // Need a way to survive recomposition, that's why is used "remember".
-// Queue tab: folder filter, track list and mini player. Playback state and the full track list come from
-// AppScaffold as parameters (read-only here) - this screen only owns what nobody else needs: the folder filter
+// Queue tab: buttons, track list and mini player. Everything comes from AppScaffold as parameters (read-only here):
+// tracks is already filtered by the "Folders" tab's LibraryFilter, so this screen doesn't know about folders at all
 @Composable
 fun TrackScreen(
     player: PlayerState,
-    allTracks: List<Track>,
+    tracks: List<Track>,
     currentTrack: Track?,
     hasPermission: Boolean,
     listState: LazyListState,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("library", Context.MODE_PRIVATE) }
-    // Folder filter is read from prefs right in the initial value: remember's block runs once, when the screen appears.
-    // Saved in FolderPickerDialog's onDismiss; without reading it back the checkboxes would reset on every return
-    var selectedPaths by remember { mutableStateOf(prefs.getStringSet("paths", emptySet()) ?: emptySet()) }
-    var showFolderPicker by remember { mutableStateOf(false) }
-    var includeSubfolders by remember { mutableStateOf(prefs.getBoolean("subfolders", false)) }
-    val tracks = remember(allTracks, selectedPaths, includeSubfolders) {
-        when {
-            selectedPaths.isEmpty() -> allTracks
-            includeSubfolders -> allTracks.filter { track ->
-                selectedPaths.any { track.relativePath.startsWith(it) }
-            }
-
-            else -> allTracks.filter { it.relativePath in selectedPaths }
-        }
-    }
-    val folders = remember(allTracks, includeSubfolders){
-        buildFolderList(allTracks, includeSubfolders)
-    }
     // Scroll list to the playing track. Two keys: re-run when track changes AND when tracks are loaded
     // (on app return currentTrackId may arrive before the list, then index would be -1 and nothing would scroll).
     // LaunchedEffect body is a coroutine, that's why suspend function scrollToItem can be called here
@@ -109,9 +88,6 @@ fun TrackScreen(
             Row(modifier = Modifier.fillMaxWidth()) {
                 TextButton(onClick = {player.toggleShuffle()}){
                     Text(if (player.shuffleEnabled) "Shuffle: on" else "Shuffle: off")
-                }
-                TextButton(onClick = {showFolderPicker = true}) {
-                    Text("Directories")
                 }
                 TextButton(onClick = {player.cycleRepeat()}) {
                     Text(
@@ -156,28 +132,6 @@ fun TrackScreen(
                 player = player,
                 // align exists only inside Box { } (extension available in BoxScope) - pins the bar to bottom center
                 modifier = Modifier.align(Alignment.BottomCenter)
-            )
-        }
-        if (showFolderPicker) {
-            FolderPickerDialog(
-                folders = folders,
-                selected = selectedPaths,
-                includeSubfolders = includeSubfolders,
-                onToggleSubfolders = { includeSubfolders = !includeSubfolders },
-                onToggle = { path ->
-                    selectedPaths = if (path in selectedPaths) {
-                        selectedPaths - path
-                    } else {
-                        selectedPaths + path
-                    }
-                },
-                onDismiss = {
-                    prefs.edit()
-                        .putStringSet("paths", selectedPaths)
-                        .putBoolean("subfolders", includeSubfolders)
-                        .apply()
-                    showFolderPicker = false
-                }
             )
         }
     }
@@ -225,6 +179,13 @@ fun AppScaffold(){
     LaunchedEffect(hasPermission) {
         if (hasPermission) allTracks = loadTracks(context)
     }
+    // Folder filter: changed on the "Folders" tab, used by Queue - so it lives here, above both tabs.
+    // tracks is recomputed only when one of the keys changes (library loaded, selection, subfolders option),
+    // not on every recomposition (e.g. each position poll)
+    val library = rememberLibraryFilter()
+    val tracks = remember(allTracks, library.selectedPaths, library.includeSubfolders){
+        library.filter(allTracks)
+    }
     // Searched in allTracks, not filtered tracks: the playing song must show even if it's outside selected folders
     val currentTrack = allTracks.firstOrNull { it.id == player.currentTrackId }
     // Scaffold - Material screen skeleton with slots (topBar, bottomBar...); innerPadding is the space
@@ -250,14 +211,14 @@ fun AppScaffold(){
             when (currentTab){
                 Tab.QUEUE -> TrackScreen(
                     player = player,
-                    allTracks = allTracks,
+                    tracks = tracks,
                     currentTrack = currentTrack,
                     hasPermission = hasPermission,
                     listState = listState
                 )
                 Tab.NOW_PLAYING -> NowPlayingScreen(player = player, track = currentTrack)
                 Tab.PLAYLISTS -> Placeholder("Playlists")
-                Tab.STORAGE -> Placeholder("Folders")
+                Tab.STORAGE -> FoldersScreen(allTracks = allTracks, library = library)
                 Tab.DOWNLOADER -> Placeholder("Downloader")
             }
         }

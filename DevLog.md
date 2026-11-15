@@ -691,3 +691,33 @@ This resolves most of the "Known issues" from the previous entry (all except the
 - `PlaybackService.kt:172`: `AcceptedResultBuilder(session)` is deprecated (compiler warning).
 - `NowPlayingBar` takes both `player` and separate button callbacks. That works, but it's mixed. It could take only `track` + `player` later.
 - Still open: artwork cache (Coil), notification title for untagged files (`MediaMetadata`), empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
+
+---
+
+## 2026-11-15 (night) — Folder filter moved to its own tab, `LibraryFilter`
+
+### Added: `LibraryFilter.kt`
+- `class LibraryFilter(private val prefs: SharedPreferences)` holds the folder filter: `selectedPaths` and `includeSubfolders`. Same idea as `PlayerState`: one object owns the state and the only methods allowed to change it (`togglePath`, `toggleSubfolders`).
+- **`private val` in the constructor** declares the field and assigns it in one step (like a C# primary constructor).
+- **`private set`**: anyone can read `selectedPaths`, but only the class can assign it. Screens can't bypass `save()`.
+- Initial values are read from prefs `library` (keys `paths`, `subfolders`, same as before, so a filter saved earlier still loads).
+- **Saved on every toggle** instead of on "Done", because the dialog is gone and the tab can be left at any moment.
+- Set `+`/`-` return a **new** set. `mutableStateOf` notices a new object being assigned. Changing the old set in place wouldn't trigger a redraw.
+- `filter(tracks)` is the old `when` from `TrackScreen`: nothing selected → all tracks; subfolders → `startsWith`; otherwise an exact folder match. The outer lambda names its parameter `t`, because the inner `any { }` already uses `it`.
+- `rememberLibraryFilter()` follows the same pattern as `rememberPlayerState()`.
+
+### Changed: the "Folders" tab replaces the dialog
+- `FolderPickerDialog` (an `AlertDialog` opened by the "Directories" button on Queue) → `FoldersScreen(allTracks, library)` on the `Tab.STORAGE` tab. Same contents: the "subfolders" checkbox row, a divider, and a `LazyColumn(Modifier.weight(1f))` of folder checkboxes with track counts.
+- `FoldersScreen` doesn't own the filter. It reads and changes the `LibraryFilter` it receives.
+- **Hoisting again:** the filter is changed on one tab and used on another, so `library` and the filtered `tracks` live in `AppScaffold`. `tracks = remember(allTracks, library.selectedPaths, library.includeSubfolders) { library.filter(allTracks) }` is recomputed only when a key changes, not on every position poll.
+- **`TrackScreen`** gets `tracks` (already filtered) instead of `allTracks`, and knows nothing about folders. Its prefs, filter state, `folders`, "Directories" button and dialog are all gone. `currentTrack` is still looked up in `allTracks`, so the bar stays when the playing song is outside the selected folders.
+- Comments added or updated in `LibraryFilter.kt`, `FolderPicker.kt` and `MainActivity.kt`. The unused `import android.content.Context` was removed from `MainActivity.kt`.
+
+### Bugs fixed during development
+- **`empty()`** doesn't exist. An empty set is `emptySet()`.
+- **`getSharedPreference`** → `getSharedPreferences` (plural).
+- **`FolderPicker.kt`: "Unresolved reference 'remember'" + "Destructuring of type 'Int' requires operator function 'component1()'".** Only the first error was real: a missing `import androidx.compose.runtime.remember`. Because `remember` was unknown, the type of `folders` was unknown too, so Kotlin picked the other overload `items(count: Int)` instead of `items(list)`, and `{ (path, count) -> }` tried to unpack an `Int`. **Fix the first error and recompile: later ones are often side effects.**
+
+### Known issues / next steps
+- `FolderPicker.kt` now holds `FoldersScreen`, not a picker. Rename it to `FoldersScreen.kt` (Shift+F6).
+- Still open: `AcceptedResultBuilder(session)` deprecation, artwork cache (Coil), notification title for untagged files (`MediaMetadata`), empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
