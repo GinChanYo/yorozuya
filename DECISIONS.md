@@ -37,7 +37,7 @@ Bad metadata is fixed by writing to Room (track ID + corrected fields) rather th
 
 ### Album art search order
 
-1. Embedded in the file (`MediaMetadataRetriever.embeddedPicture`)
+1. Embedded in the file — done in 0.1 via `ContentResolver.loadThumbnail(uri, Size, null)` instead of `MediaMetadataRetriever.embeddedPicture`: it reads the same embedded picture, but decodes it straight to the requested size (128px for a list row instead of the full cover), and needs no retriever object to open and release
 2. `cover.jpg` / `folder.jpg` in the same folder
 3. Network (MusicBrainz → MBID → Cover Art Archive)
 
@@ -47,21 +47,58 @@ MusicBrainz requires a meaningful User-Agent with the app name and repository li
 
 A consequence of using certain libraries. Matches the desired outcome: open source, forks allowed, but must remain open.
 
-## Version 0.1
+## Version 0.1 — done (2026-11-15)
 
-Only this, nothing extra:
+Planned:
 
-* file scanning via MediaStore
-* track list
-* background playback with notification
-* queue
-* shuffle
+* file scanning via MediaStore ✅
+* track list ✅
+* background playback with notification ✅
+* queue ✅
+* shuffle ✅
 
-Definition of done: I listen to music through this app myself.
+Definition of done: I listen to music through this app myself. ✅
+
+### Done beyond the plan
+
+From IDEAS.md:
+
+* Library filter by folder, with optional subfolders — now its own "Folders" tab (IDEAS #2)
+* Tapping the notification opens the app and shows the playing song (IDEAS #4)
+* "Close" button in the notification that stops playback and the service (IDEAS #5)
+
+Not in any list, came up along the way:
+
+* Previous / Next, repeat mode (Off → All → One)
+* Seek bar with position and duration
+* Queue, current track, position, shuffle and repeat restored after a restart
+* Audio focus and pause on headphones unplug
+* Mini player, auto-scroll to the playing track
+* Bottom navigation with five tabs; "Now" tab with full controls
+* Embedded cover art in the list, mini player and "Now" tab (step 1 of "Album art search order")
+
+## Version 0.2 — library and cover art (in progress)
+
+The order shifted: cover art (planned for 0.3) was started right after 0.1, so it is finished first, together with what the library still lacks.
+
+* ✅ Embedded cover art
+* ✅ "Folders" tab
+* `cover.jpg` / `folder.jpg` fallback (step 2 of "Album art search order")
+* Coil 3 for loading and caching artwork (now every row re-reads its cover after scrolling back)
+* Title/artist/artwork in the notification for untagged files (`MediaMetadata` on `MediaItem`)
+* Open issues from DevLog: empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread
+
+## Version 0.3 — synchronized lyrics
+
+* LRCLIB search and synced display on the "Now" tab
+* Manual lyrics offset adjustment
+
+## Version 0.4 — metadata fixing and online cover art
+
+* Room override table (see "Override table instead of rewriting tags"); also improves LRCLIB matches
+* Online cover art: MusicBrainz → Cover Art Archive (step 3 of "Album art search order")
 
 ## Postponed
 
-* Synchronized lyrics (0.2)
-* Metadata and cover art fixing (0.3)
-* YouTube downloading (0.4)
-* Manual lyrics offset adjustment
+* YouTube downloading (0.5) — "Get" tab stays a placeholder until then
+* Playlists ("Lists" tab) — needs Room, so not before 0.4
