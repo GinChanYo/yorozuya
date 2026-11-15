@@ -41,7 +41,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | Lambda `{ x -> ... }` | Anonymous function; single param can be `it`. |
 | Trailing lambda `f(a) { ... }` | Last lambda parameter goes outside `()`. |
 | Lambda with receiver | Inside `Row { }`, `this` is `RowScope` → `Modifier.weight` available. |
-| Function types `() -> Unit`, `(Float) -> Unit` | Like `Action`, `Action<float>`. |
+| Function types `() -> Unit`, `(Float) -> Unit` | Like `Action`, `Action<float>`. A lambda can be stored in a `val` and passed down: `val showMessage: (String) -> Unit = { ... }`. |
+| Function type with receiver `A.(String) -> Unit` | Function called *on* an `A` (inside it `this` is `A`), e.g. `RowScope.() -> Unit` of `Row { }`. |
 | `Unit` | "No value" type (`void`). |
 | `by` (delegation) | `var x by mutableStateOf(0)` — reads/writes go through the delegate's `getValue`/`setValue`. |
 | String templates `"$x"`, `"${a.b}"` | String interpolation (`$"{x}"`). |
@@ -91,6 +92,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 |---|---|
 | Coroutine | Lightweight async task; `suspend` functions can pause it without blocking a thread (like `async/await`). |
 | `delay(d)` | Suspend for a while (`await Task.Delay`). |
+| `scope.launch { }` | Start a coroutine; returns a `Job`. Inside a coroutine, `launch` starts a child. |
+| `job.cancel()` | Cancel a coroutine (e.g. one waiting in `showSnackbar` → the bubble disappears). No effect if it already finished. |
 | `withContext(Dispatchers.IO) { }` | Run block on the I/O thread pool, return result to caller. |
 | `Dispatchers.IO` | Thread pool for disk/network waiting. |
 
@@ -146,6 +149,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `getValue` / `setValue` imports | Needed for `by` with state. |
 | `@Stable` | Promise to Compose that changes are reported through state. |
 | `LaunchedEffect(keys) { }` | Run a coroutine when entering composition / when keys change; cancelled on leave. `Unit` key = once. |
+| `rememberCoroutineScope()` | Scope for starting coroutines yourself, e.g. from `onClick`; cancelled when the composable leaves. |
 | `DisposableEffect(key) { ... onDispose { } }` | Effect with cleanup when leaving composition. |
 | `produceState(initial, key) { value = ... }` | Coroutine that produces state; returns `State`, read `.value`. |
 | `LocalContext.current` | Current `Context` inside a composable. |
@@ -208,9 +212,15 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `MaterialTheme.colorScheme.primary/onSurface/surfaceVariant` | Theme colors. |
 | `MaterialTheme.typography.displayLarge/headlineMedium/headlineSmall/bodyLarge/bodyMedium/bodySmall/labelSmall` | Text styles. |
 | `YorozuyaTheme { }` | Our theme (`ui/theme`): dynamic colors on Android 12+, dark/light by system. |
-| `Scaffold(bottomBar = { }) { innerPadding -> }` | Screen skeleton with slots; `innerPadding` = space bars take. |
+| `Scaffold(bottomBar = { }, snackbarHost = { }) { innerPadding -> }` | Screen skeleton with slots; `innerPadding` = space bars take. |
+| `SnackbarHostState` | Holds the shown message: `showSnackbar(text, duration)` (suspend), `currentSnackbarData?.dismiss()`. |
+| `SnackbarHost(state) { data -> }` | Draws messages; optional lambda = custom look, `data.visuals.message` = text. |
+| `SnackbarDuration.Short/Long/Indefinite` | How long a message stays (Short ≈ 4 s). |
 | `NavigationBar { NavigationBarItem(selected, onClick, icon, label) }` | Bottom tab bar. `label = null` → icon only. |
-| `Surface(color, tonalElevation)` | Background container; elevation tints color. |
+| `Surface(color, contentColor, shape, tonalElevation)` | Background container; `contentColor` colors text inside; elevation tints color. |
+| `RoundedCornerShape(50)` (Int) | Corner radius in percent of the size: 50 = fully round ends (pill). With `.dp` it's a fixed radius. |
+| `colorScheme.inverseSurface/inverseOnSurface` | Contrasting colors for bubbles (dark in light theme). |
+| `TextButton(onClick = { action }) { Text(...) }` | `onClick` runs once on tap; trailing `{ }` is what's drawn, runs on every recomposition - no actions there. |
 | `TextButton(onClick) { }` | Flat button with content. |
 | `Slider(value, onValueChange, onValueChangeFinished)` | Draggable 0..1 bar. |
 | `Checkbox(checked, onCheckedChange)` | Checkbox. |
@@ -267,15 +277,15 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `TrackLoader.kt` | `loadTracks(context): List<Track>` | Query MediaStore for music. |
 | `Tabs.kt` | `enum class Tab(label, icon)` | `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`; icon = `R.drawable.ic_*`. |
 | `MainActivity.kt` | `MainActivity` | Entry point; `setContent { YorozuyaTheme { AppScaffold() } }`. |
-| | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState`, `library`, filtered `tracks`. |
-| | `TrackScreen(player, tracks, currentTrack, hasPermission, listState)` | Queue tab: buttons, (already filtered) list, mini player, auto-scroll. |
+| | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState`, `library`, filtered `tracks`, snackbar + `showMessage`. |
+| | `TrackScreen(player, tracks, currentTrack, hasPermission, listState, showMessage)` | Queue tab: buttons, (already filtered) list, mini player, auto-scroll. |
 | | `Placeholder(name)` | Stub screen for unfinished tabs. |
 | `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick)` | Scrollable track list. |
 | | `TrackRow(track, isCurrent, isPlaying, onClick)` | One row: cover + title/artist. |
 | `NowPlayingBar.kt` | `NowPlayingBar(track, isPlaying, on...Click, player)` | Mini player: seek bar, cover, title, prev/play/next. |
 | | `formatTime(ms)` | `83500` → `"1:23"`. |
 | `SeekBar.kt` | `PlayerSeekBar(player, modifier)` | Slider + time labels with own drag state; used by mini player and "Now" tab. |
-| `NowPlayingScreen.kt` | `NowPlayingScreen(player, track?)` | "Now" tab: big cover, info, slider, all controls. |
+| `NowPlayingScreen.kt` | `NowPlayingScreen(player, track?, showMessage)` | "Now" tab: big cover, info, slider, all controls. |
 | `Artwork.kt` | `rememberArtwork(uri, sizePx): ImageBitmap?` | Load embedded cover off the main thread. |
 | | `ArtworkThumb(uri, size, sizePx, modifier)` | Small rounded cover with "♪" fallback. |
 | `FolderPicker.kt` | `buildFolderList(tracks, includeSubfolders)` | `(path, count)` pairs for the Folders tab. |
@@ -289,6 +299,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | | `playQueue(tracks, startIndex)` | Replace queue and play. |
 | | `togglePlayPause()`, `next()`, `previous()`, `seekTo(ms)`, `toggleShuffle()`, `cycleRepeat()` | Controls. |
 | | `rememberPlayerState()` | Connect to service, listen, poll position every 500 ms. |
+| | `repeatModeName(mode)` | `"Off"` / `"All"` / `"One"` for button text and messages. |
 | `PlaybackService.kt` | `PlaybackService : MediaSessionService` | Owns `ExoPlayer` and `MediaSession`, notification, "Close" button. |
 | | `saveState()` / `restoreState(player)` | Persist queue, index, position, shuffle, repeat in prefs `playback_state`. |
 | | `CallBack` | Session callback: allows and handles `stopCommand`. |

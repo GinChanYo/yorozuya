@@ -751,3 +751,32 @@ This resolves most of the "Known issues" from the previous entry (all except the
 ### Known issues / next steps
 - Four of the five icon files are untracked in git (only `ic_download.xml` was staged): `git add app/src/main/res/drawable/` before committing.
 - Still open: see DECISIONS.md, version 0.2.
+
+---
+
+## 2026-11-15 (late night, 2) — Message bubble for shuffle/repeat changes
+
+### Added: Snackbar "Shuffle: on" / "Repeat: All" on both tabs
+- **`AppScaffold`** owns the bubble:
+  - `val snackbarHostState = remember { SnackbarHostState() }` holds the currently shown message.
+  - `val scope = rememberCoroutineScope()`: `showSnackbar` is a `suspend` function (it waits until the message disappears), so it needs a coroutine. **`rememberCoroutineScope` vs `LaunchedEffect`:** an effect starts its coroutine by itself when the screen appears; a scope lets *you* start coroutines later, for example from a click. Both are cancelled when the composable leaves.
+  - `val showMessage: (String) -> Unit = { text -> ... }` is a lambda stored in a variable and passed down to `TrackScreen` and `NowPlayingScreen` as a parameter. State goes down, events go up.
+  - `Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) { data -> ... } })`. Scaffold places it above the bottom bar, centered.
+- **Small pill instead of the default full-width Snackbar:** `SnackbarHost`'s trailing lambda draws each message (`data.visuals.message`) as `Surface(shape = RoundedCornerShape(50), color = inverseSurface, contentColor = inverseOnSurface) { Text(bodySmall, padding 16/8 dp) }`.
+  - No width modifier, so the pill is only as wide as its text.
+  - `RoundedCornerShape(50)` = 50% of the height, so the ends are fully round.
+  - `contentColor` colors the `Text` inside automatically.
+- **1.5 s instead of ~4 s:** `SnackbarDuration` has only `Short`/`Long`/`Indefinite`. So `showSnackbar(text, SnackbarDuration.Indefinite)` runs in a child `launch`, the parent waits `delay(1500)` and then calls `job.cancel()`. Cancelling the coroutine that waits in `showSnackbar` removes the bubble.
+- **Fast taps:** `currentSnackbarData?.dismiss()` before each new message replaces the bubble instead of queuing. A stale coroutine's `job.cancel()` only affects its own, already finished job, so it can't close the newer bubble.
+- **`repeatModeName(mode)`** in `PlayerConnection.kt` is one place for "Off"/"All"/"One". It's used by the Queue repeat button text (replacing its `when`) and by both messages.
+- On the Now tab the buttons keep their emoji, while the message uses words.
+- `import androidx.media3.common.Player` was removed from `MainActivity.kt` (no longer used there).
+
+### Bugs fixed during development
+- **Typo `showSnackBar` (capital B) + an IDE quick-fix:** "Create parameter" added `showSnackBar: SnackbarHostState.(String) -> Unit` to `AppScaffold()`, which broke the call in `onCreate`. That type is a **function type with a receiver** (called *on* a `SnackbarHostState`, like `RowScope` in `Row { }`). Fix: restore `AppScaffold()` and spell it `showSnackbar`. Same trap as the invented `align` parameter earlier: **if a quick-fix creates a parameter for something that should already exist, look for a typo.**
+- **`showMessage(...)` in the button's content lambda instead of `onClick`:** it compiled (the content lambda accepts any code), but the buttons would have lost their labels and the bubble would fire on every recomposition. **`onClick` = what happens (once, on tap); trailing `{ }` = what is drawn (on every recomposition).**
+- **Message shown twice:** the old `snackbarHostState.showSnackbar(text)` stayed after the new delay/cancel code. Code in a coroutine runs top to bottom, so after the 1.5 s pill was cancelled, the same text appeared again for ~4 s.
+
+### Known issues / next steps
+- On Queue the pill briefly covers the mini player (both at the bottom).
+- Still open: see DECISIONS.md, version 0.2.

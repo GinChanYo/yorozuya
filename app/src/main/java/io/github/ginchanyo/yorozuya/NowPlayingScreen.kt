@@ -30,6 +30,8 @@ import androidx.media3.common.Player
 fun NowPlayingScreen(
     player: PlayerState,
     track: Track?,
+    // Shows a short bubble at the bottom (Snackbar in AppScaffold) - called from onClick, never from drawing code
+    showMessage: (String) -> Unit,
     modifier: Modifier = Modifier
 ){
     // Early return from a composable: draw the empty state and skip the rest.
@@ -96,7 +98,11 @@ fun NowPlayingScreen(
             verticalAlignment = Alignment.CenterVertically
         ){
             // "\uD83D\uDD00" - emoji written as two UTF-16 code units (surrogate pair), because emoji don't fit in one Char
-            TextButton(onClick = {player.toggleShuffle()}){
+            // Buttons show emoji, the message uses words - a bubble with just an emoji wouldn't say much
+            TextButton(onClick = {
+                player.toggleShuffle()
+                showMessage(if (player.shuffleEnabled) "Shuffle: on" else "Shuffle: off")
+            }){
                 Text(if (player.shuffleEnabled) "\uD83D\uDD00" else "➡")
             }
             TextButton(onClick = {player.previous()}) {Text("◀◀")}
@@ -104,7 +110,10 @@ fun NowPlayingScreen(
                 Text(if (player.isPlaying) "⏸" else "▶", style = MaterialTheme.typography.headlineMedium)
             }
             TextButton(onClick = {player.next()}) {Text("▶▶")}
-            TextButton(onClick = {player.cycleRepeat()}) {
+            TextButton(onClick = {
+                player.cycleRepeat()
+                showMessage("Repeat: ${repeatModeName(player.repeatMode)}")
+            }) {
                 Text(
                     when (player.repeatMode) {
                         Player.REPEAT_MODE_ALL -> "\uD83D\uDD01"

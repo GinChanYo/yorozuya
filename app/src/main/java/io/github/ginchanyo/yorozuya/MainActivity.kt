@@ -16,10 +16,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,8 +41,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.media3.common.Player
 import io.github.ginchanyo.yorozuya.ui.theme.YorozuyaTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +70,8 @@ fun TrackScreen(
     currentTrack: Track?,
     hasPermission: Boolean,
     listState: LazyListState,
+    // Shows a short bubble at the bottom (Snackbar in AppScaffold) - called from onClick, never from drawing code
+    showMessage: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Scroll list to the playing track. Two keys: re-run when track changes AND when tracks are loaded
@@ -88,17 +98,20 @@ fun TrackScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             // Row - buttons side by side in one line instead of stacked vertically
             Row(modifier = Modifier.fillMaxWidth()) {
-                TextButton(onClick = {player.toggleShuffle()}){
+                // onClick - what happens on tap (runs once); trailing { } - what the button looks like
+                // (runs on every recomposition, so no actions there).
+                // Message is shown after the toggle: PlayerState updates its fields right away, so the text is the new mode
+                TextButton(onClick = {
+                    player.toggleShuffle()
+                    showMessage(if (player.shuffleEnabled) "Shuffle: on" else "Shuffle: off")
+                }){
                     Text(if (player.shuffleEnabled) "Shuffle: on" else "Shuffle: off")
                 }
-                TextButton(onClick = {player.cycleRepeat()}) {
-                    Text(
-                        when (player.repeatMode){
-                            Player.REPEAT_MODE_ALL -> "Repeat: All"
-                            Player.REPEAT_MODE_ONE -> "Repeat: One"
-                            else -> "Repeat: Off"
-                        }
-                    )
+                TextButton(onClick = {
+                    player.cycleRepeat()
+                    showMessage("Repeat: ${repeatModeName(player.repeatMode)}")
+                }) {
+                    Text("Repeat: ${repeatModeName(player.repeatMode)}")
                 }
             }
 
@@ -144,11 +157,31 @@ fun TrackScreen(
 // "state goes down, events go up". Tab screens leave composition when switched away, so anything kept
 // only inside them is lost; anything kept here survives tab switches
 @Composable
-fun AppScaffold(){
+fun AppScaffold() {
     var currentTab by remember { mutableStateOf(Tab.QUEUE) }
     val context = LocalContext.current
     // All playback state and controls live in PlayerState (PlayerConnection.kt); here only read fields and call methods
     val player = rememberPlayerState()
+    // Holds the currently shown snackbar; Scaffold draws it through snackbarHost
+    val snackbarHostState = remember { SnackbarHostState() }
+    // Coroutine scope tied to this composable: lets a click handler start a coroutine
+    // (showSnackbar is suspend - it waits until the message disappears)
+    val scope = rememberCoroutineScope()
+    // Event passed down to the tabs ("events go up"): a lambda stored in a variable, same type as any (String) -> Unit parameter.
+    // dismiss() first, so fast taps replace the bubble instead of queuing
+    val showMessage: (String) -> Unit = { text ->
+        snackbarHostState.currentSnackbarData?.dismiss()
+        scope.launch {
+            // Indefinite + manual dismiss after a delay - Snackbar has no "shorter than Short" option (Short is ~4 s).
+            // Inner launch - a child coroutine that sits in showSnackbar while this one waits 1.5 s;
+            // cancelling the child is what makes the bubble disappear.
+            // If a newer tap already dismissed this message, job is finished and cancel() does nothing -
+            // it can't close the newer bubble, that one belongs to another job
+            val job = launch { snackbarHostState.showSnackbar(text, duration = SnackbarDuration.Indefinite) }
+            delay(1500)
+            job.cancel()
+        }
+    }
     // Keeps scroll position (and last visible items) of the Queue list. Lives here, not in TrackScreen,
     // so it survives tab switches: the list reopens where it was and auto-scroll doesn't fire again
     val listState = rememberLazyListState()
@@ -194,6 +227,29 @@ fun AppScaffold(){
     // the bars take, so content isn't drawn under them
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        // Custom look instead of the default full-width Snackbar: a small pill sized to its text.
+        // SnackbarHost's trailing lambda is called for each message; data.visuals.message - the text given to showSnackbar.
+        // Scaffold places the host above bottomBar and centers it horizontally
+        snackbarHost = {
+            SnackbarHost(snackbarHostState){data ->
+                // No width modifier - Surface is only as wide as its text, that's what makes it small.
+                // RoundedCornerShape(50) - 50 percent of the height, fully round ends (4.dp would be a fixed radius).
+                // inverseSurface/inverseOnSurface - same colors the default Snackbar uses (dark bubble in light theme).
+                // contentColor - Text inside takes it automatically, no color = needed
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = MaterialTheme.colorScheme.inverseSurface,
+                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Text(
+                        text = data.visuals.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        },
         bottomBar = {
             NavigationBar {
                 // entries - list of all enum values in declaration order (like Enum.GetValues in C#)
@@ -223,9 +279,10 @@ fun AppScaffold(){
                     tracks = tracks,
                     currentTrack = currentTrack,
                     hasPermission = hasPermission,
-                    listState = listState
+                    listState = listState,
+                    showMessage = showMessage
                 )
-                Tab.NOW_PLAYING -> NowPlayingScreen(player = player, track = currentTrack)
+                Tab.NOW_PLAYING -> NowPlayingScreen(player = player, track = currentTrack, showMessage = showMessage)
                 Tab.PLAYLISTS -> Placeholder("Playlists")
                 Tab.STORAGE -> FoldersScreen(allTracks = allTracks, library = library)
                 Tab.DOWNLOADER -> Placeholder("Downloader")

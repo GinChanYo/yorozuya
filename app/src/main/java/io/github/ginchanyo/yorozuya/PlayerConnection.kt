@@ -161,3 +161,10 @@ fun rememberPlayerState(): PlayerState{
     }
     return state
 }
+
+// Human-readable name of a repeat mode, for button text and messages
+fun repeatModeName(mode: Int): String = when (mode){
+    Player.REPEAT_MODE_ALL -> "All"
+    Player.REPEAT_MODE_ONE -> "One"
+    else -> "Off"
+}
