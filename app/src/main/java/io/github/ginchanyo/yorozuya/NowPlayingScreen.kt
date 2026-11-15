@@ -13,14 +13,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -45,10 +40,6 @@ fun NowPlayingScreen(
         }
         return
     }
-    // Own drag state, separate from the mini player's: same idea (thumb follows the finger, real seek on release),
-    // but it's UI-only state of this screen, so it isn't in PlayerState
-    var isSeeking by remember { mutableStateOf(false) }
-    var seekPosition by remember { mutableStateOf(0f) }
     val artwork = rememberArtwork(track.uri)
     Column(
         modifier = modifier
@@ -97,39 +88,7 @@ fun NowPlayingScreen(
 
         // weight(1f) on a spacer pushes everything below it to the bottom of the screen
         Spacer(modifier = Modifier.weight(1f))
-
-        // Slider works with 0..1 fraction; duration > 0 check avoids division by zero before the track is prepared
-        Slider(
-            value = if (isSeeking){
-                seekPosition
-            } else if (player.duration > 0){
-                player.position.toFloat() / player.duration
-            } else 0f,
-            onValueChange = { fraction ->
-                isSeeking = true
-                seekPosition = fraction
-            },
-            onValueChangeFinished = {
-                if (player.duration > 0){
-                    val target = (seekPosition * player.duration).toLong()
-                    player.seekTo(target)
-                    player.position = target
-                }
-                isSeeking = false
-            }
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = formatTime(
-                    if (isSeeking) (seekPosition * player.duration).toLong() else player.position
-                ),
-                style = MaterialTheme.typography.labelSmall
-            )
-            Text(text = formatTime(player.duration), style = MaterialTheme.typography.labelSmall)
-        }
+        PlayerSeekBar(player = player)
         // SpaceEvenly - equal gaps between buttons and at both edges
         Row(
             modifier = Modifier.fillMaxWidth(),

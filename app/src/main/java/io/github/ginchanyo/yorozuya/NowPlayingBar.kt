@@ -1,6 +1,5 @@
 package io.github.ginchanyo.yorozuya
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -19,8 +17,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 // Mini player at the bottom of the screen: title, artist and Play/Pause button.
-// It doesn't know about the controller: it only gets data and a callback (onPlayPauseClick),
-// so the parent decides what a click does. This is "state hoisting" - common Compose pattern.
+// Buttons only get callbacks (onPlayPauseClick...), so the parent decides what a click does - "state hoisting".
+// Exception: the seek bar gets the whole PlayerState, because PlayerSeekBar (SeekBar.kt) is shared with the "Now" tab
+// and keeps its own drag state.
 @Composable
 fun NowPlayingBar(
     track: Track,
@@ -29,14 +28,8 @@ fun NowPlayingBar(
     onPlayPauseClick: () -> Unit,
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
-    // 0..1 position of the slider thumb
-    progress: Float,
-    // Shown as text under the slider, in milliseconds
-    positionMs: Long,
-    durationMs: Long,
-    // (Float) -> Unit - function that takes the new slider fraction (like Action<float> in C#)
-    onSeekChange: (Float) -> Unit,
-    onSeekFinished: () -> Unit,
+    // Only passed through to PlayerSeekBar (reads position/duration, calls seekTo)
+    player: PlayerState,
     // Convention: every reusable composable accepts a modifier, so the caller can position it (e.g. align)
     modifier: Modifier = Modifier
 ) {
@@ -47,26 +40,10 @@ fun NowPlayingBar(
         color = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 3.dp
     ) {
-        // Column - slider on top, time labels under it, then the row with title and buttons
+        // Column - seek bar (slider + time labels) on top, then the row with cover, title and buttons
         Column{
-            // Slider - draggable bar; value must be in 0..1 by default (valueRange can change that).
-            // onValueChange fires on every move, onValueChangeFinished once on release
-            Slider(
-                value = progress,
-                onValueChange = onSeekChange,
-                onValueChangeFinished = onSeekFinished,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-            // SpaceBetween - first child at the left edge, last at the right edge, free space between them
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(text = formatTime(positionMs), style = MaterialTheme.typography.labelSmall)
-                Text(text = formatTime(durationMs), style = MaterialTheme.typography.labelSmall)
-            }
+            // Padding comes from the caller: PlayerSeekBar has none of its own, the "Now" tab is already padded
+            PlayerSeekBar(player = player, modifier = Modifier.padding(horizontal = 16.dp))
             // Row - places children horizontally; CenterVertically aligns text and buttons on one middle line
             Row(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -93,7 +70,7 @@ fun NowPlayingBar(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                TextButton(onClick = onPreviousClick){Text("◀")}
+                TextButton(onClick = onPreviousClick){Text("◀◀")}
                 TextButton(onClick = onPlayPauseClick){Text(if (isPlaying)"⏸" else "▶")}
                 TextButton(onClick = onNextClick){Text("▶▶")}
             }

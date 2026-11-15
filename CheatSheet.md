@@ -1,7 +1,7 @@
 # Yorozuya Cheat Sheet
 
 Everything used in the code so far, one short line each. C# analogies where they help.
-Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform → Compose runtime → Compose layout → Modifiers → Compose UI elements → Material 3 → Media3 → Project code.
+Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform → Compose runtime → Compose layout → Modifiers → Compose UI elements → Material 3 → Media3 → Gradle → Project code.
 
 ---
 
@@ -29,6 +29,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `inner class` | Nested class with access to the outer instance (plain nested = C# static nested). |
 | `object : Interface { }` | Anonymous object implementing an interface. |
 | `override fun` | Override a base/interface member (explicit keyword required). |
+| Shadowing | A local with the same name as a parameter hides it; Kotlin only warns ("Name shadowed"). |
 | `@Annotation` | Metadata, e.g. `@Composable`, `@Stable`, `@OptIn`. |
 | `when (x) { A -> ...; else -> ... }` | Switch expression; returns a value. Exhaustive over enums → no `else`. |
 | `when { cond -> ... }` | `when` without subject = if/else-if chain. |
@@ -76,6 +77,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `coerceAtLeast(0L)` | Clamp to minimum. |
 | `"%d:%02d".format(a, b)` | printf-style formatting. |
 | `?.let { }` | Run block only if not null; value is `it`. |
+| `takeIf { cond }` | The value if `cond` is true, otherwise `null`. With `?.`: `s?.takeIf { it != "x" }`. |
 | `run { }` | Run block with object as `this`. |
 | `use { }` | Run block and close resource after (`using`). |
 | `500.milliseconds` | `kotlin.time.Duration` from a number. |
@@ -109,6 +111,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `contentResolver.loadThumbnail(uri, Size, null)` | Decode a small preview (embedded cover) → `Bitmap`. |
 | `Cursor` | Result rows: `moveToNext()`, `getColumnIndexOrThrow()`, `getLong()`, `getString()`. |
 | `ContentUris.withAppendedId(base, id)` | Uri of one row (one track). |
+| `MediaStore.UNKNOWN_STRING` | `"<unknown>"`, what MediaStore returns for missing tags (not `null`). |
 | `MediaStore.Audio.Media` | System audio table: `_ID`, `TITLE`, `ARTIST`, `ALBUM`, `DURATION`, `RELATIVE_PATH`, `IS_MUSIC`. |
 | `MediaStore.Audio.Media.getContentUri(VOLUME_EXTERNAL)` | Uri of the whole audio table. |
 | `android.util.Size(w, h)` | Width/height pair. |
@@ -240,7 +243,16 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Futures.immediateFuture(x)` | Already-completed future. |
 | `ImmutableList.of(...)` | Immutable list. |
 
-## 11. Project code
+## 11. Gradle
+
+| Name | Meaning |
+|---|---|
+| `gradle/libs.versions.toml` | Version catalog: `[versions]` and `[libraries]` aliases, used as `libs.xxx` in build files. |
+| `app/build.gradle.kts` | App module build script; `dependencies { implementation(...) }`. |
+| `platform(libs.androidx.compose.bom)` | Compose BOM: supplies one matching set of versions, so Compose libraries are listed without versions. Never remove it. |
+| Gradle sync | Android Studio re-reads build files (elephant icon / "Sync Now"). |
+
+## 12. Project code
 
 | File | Item | Purpose |
 |---|---|---|
@@ -249,12 +261,13 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Tabs.kt` | `enum class Tab(label)` | `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`. |
 | `MainActivity.kt` | `MainActivity` | Entry point; `setContent { YorozuyaTheme { AppScaffold() } }`. |
 | | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState`. |
-| | `TrackScreen(player, allTracks, hasPermission, listState)` | Queue tab: buttons, folder filter, list, mini player, auto-scroll. |
+| | `TrackScreen(player, allTracks, currentTrack, hasPermission, listState)` | Queue tab: buttons, folder filter, list, mini player, auto-scroll. |
 | | `Placeholder(name)` | Stub screen for unfinished tabs. |
 | `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick)` | Scrollable track list. |
 | | `TrackRow(track, isCurrent, isPlaying, onClick)` | One row: cover + title/artist. |
-| `NowPlayingBar.kt` | `NowPlayingBar(...)` | Mini player: slider, times, cover, title, prev/play/next. |
+| `NowPlayingBar.kt` | `NowPlayingBar(track, isPlaying, on...Click, player)` | Mini player: seek bar, cover, title, prev/play/next. |
 | | `formatTime(ms)` | `83500` → `"1:23"`. |
+| `SeekBar.kt` | `PlayerSeekBar(player, modifier)` | Slider + time labels with own drag state; used by mini player and "Now" tab. |
 | `NowPlayingScreen.kt` | `NowPlayingScreen(player, track?)` | "Now" tab: big cover, info, slider, all controls. |
 | `Artwork.kt` | `rememberArtwork(uri, sizePx): ImageBitmap?` | Load embedded cover off the main thread. |
 | | `ArtworkThumb(uri, size, sizePx, modifier)` | Small rounded cover with "♪" fallback. |

@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
 fun TrackScreen(
     player: PlayerState,
     allTracks: List<Track>,
+    currentTrack: Track?,
     hasPermission: Boolean,
     listState: LazyListState,
     modifier: Modifier = Modifier
@@ -69,10 +70,6 @@ fun TrackScreen(
     var selectedPaths by remember { mutableStateOf(prefs.getStringSet("paths", emptySet()) ?: emptySet()) }
     var showFolderPicker by remember { mutableStateOf(false) }
     var includeSubfolders by remember { mutableStateOf(prefs.getBoolean("subfolders", false)) }
-    // While the user drags the slider, the thumb follows the finger (seekPosition, 0..1 fraction)
-    // instead of the polled position; the real seek happens once, when the finger is released
-    var isSeeking by remember {mutableStateOf(false)}
-    var seekPosition by remember {mutableStateOf(0f)}
     val tracks = remember(allTracks, selectedPaths, includeSubfolders) {
         when {
             selectedPaths.isEmpty() -> allTracks
@@ -102,9 +99,6 @@ fun TrackScreen(
             listState.animateScrollToItem(index, offset)
         }
     }
-    // firstOrNull searches list for track with matching ID and returns null if not found.
-    // Searched in allTracks, not filtered tracks: the bar must stay even if the playing song is outside selected folders
-    val currentTrack = allTracks.firstOrNull { it.id == player.currentTrackId }
     // Box - layout that stacks children on top of each other (later child is drawn above earlier one),
     // unlike Column/Row that place them one after another. Here: track list below, NowPlayingBar above it.
     // fillMaxSize - Box takes the whole screen, so its bottom edge is the screen bottom
@@ -159,31 +153,7 @@ fun TrackScreen(
                 onPreviousClick = {player.previous()},
                 onNextClick = {player.next()},
                 onPlayPauseClick = {player.togglePlayPause()},
-                // Slider works with 0..1 fraction; while dragging show the finger's value, otherwise the real one.
-                // duration > 0 check avoids division by zero before the track is prepared
-                progress = if(isSeeking) {
-                    seekPosition
-                } else if (player.duration > 0){
-                    player.position.toFloat() / player.duration
-                } else 0f,
-                // Time label follows the thumb during drag, so the user sees where they'll land
-                positionMs = if (isSeeking) (seekPosition * player.duration).toLong() else player.position,
-                durationMs = player.duration,
-                // Called on every drag step: only remember the value, don't seek yet
-                onSeekChange = { fraction ->
-                    isSeeking = true
-                    seekPosition = fraction
-                },
-                // Called once when the finger is released: one real seek. position is set right away,
-                // so the thumb doesn't flash back to the old spot until the next poll
-                onSeekFinished = {
-                    if (player.duration > 0) {
-                        val target = (seekPosition * player.duration).toLong()
-                        player.seekTo(target)
-                        player.position = target
-                    }
-                    isSeeking = false
-                },
+                player = player,
                 // align exists only inside Box { } (extension available in BoxScope) - pins the bar to bottom center
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
@@ -278,7 +248,13 @@ fun AppScaffold(){
         Box(modifier = Modifier.padding(innerPadding)){
             // Only the selected tab's screen is in composition; when is exhaustive over the enum, so no else needed
             when (currentTab){
-                Tab.QUEUE -> TrackScreen(player = player, allTracks = allTracks, hasPermission = hasPermission, listState = listState)
+                Tab.QUEUE -> TrackScreen(
+                    player = player,
+                    allTracks = allTracks,
+                    currentTrack = currentTrack,
+                    hasPermission = hasPermission,
+                    listState = listState
+                )
                 Tab.NOW_PLAYING -> NowPlayingScreen(player = player, track = currentTrack)
                 Tab.PLAYLISTS -> Placeholder("Playlists")
                 Tab.STORAGE -> Placeholder("Folders")

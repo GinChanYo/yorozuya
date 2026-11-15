@@ -49,18 +49,23 @@ fun rememberArtwork(uri: Uri, sizePx: Int = 512): ImageBitmap?{
     }.value
 }
 
+// Small rounded cover used in list rows and the mini player; "♪" while loading or when the file has no cover.
+// size - how big it is on screen (dp); sizePx - how big the decoded image is. Keep sizePx close to the
+// on-screen size in pixels: decoding a 512px cover for a 48dp box wastes memory
 @Composable
 fun ArtworkThumb(uri: Uri, size: Dp, sizePx: Int, modifier: Modifier = Modifier){
     val artwork = rememberArtwork(uri, sizePx)
     Box(
-        modifier = modifier.run {
-            size(size)
-                .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        },
+        // clip before background - otherwise the background would be drawn with square corners
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ){
         if (artwork != null) {
+            // contentDescription = null - decorative image, screen readers skip it (title is read instead).
+            // ContentScale.Crop - fill the box, trim what doesn't fit, keep proportions
             Image(
                 bitmap = artwork,
                 contentDescription = null,

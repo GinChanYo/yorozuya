@@ -46,8 +46,11 @@ fun loadTracks(context: Context): List<Track>{
                     id = id,
                     uri = ContentUris.withAppendedId(collection, id),
                     title = cursor.getString(titleCol) ?: "Unknown Name",
-                    artist = cursor.getString(artistCol),
-                    album = cursor.getString(albumCol),
+                    // MediaStore returns the text "<unknown>" (UNKNOWN_STRING) for untagged files, not null.
+                    // takeIf { cond } - the value if cond is true, otherwise null; so "<unknown>" becomes null
+                    // and the screens' "?: Unknown Artist" fallbacks work
+                    artist = cursor.getString(artistCol)?.takeIf {it != MediaStore.UNKNOWN_STRING},
+                    album = cursor.getString(albumCol)?.takeIf {it != MediaStore.UNKNOWN_STRING},
                     duration = cursor.getLong(durationCol),
                     relativePath = cursor.getString(pathCol) ?: "",
                 )

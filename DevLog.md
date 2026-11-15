@@ -657,3 +657,37 @@ This resolves the "Repeat mode isn't saved" note from the previous entry. Same f
 - **No artwork cache:** a row that scrolls out and back reloads its thumbnail from disk. Coil (planned in DECISIONS.md) would cache it.
 - Mini player buttons: `◀` vs `▶▶` — the Now tab uses `◀◀`.
 - Still open: notification title for untagged files (`MediaMetadata`), empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
+
+---
+
+## 2026-11-15 (evening) — Cleanup after artwork, shared seek bar, CheatSheet
+
+This resolves most of the "Known issues" from the previous entry (all except the artwork cache, which is planned with Coil).
+
+### Added: `CheatSheet.md`
+- A quick reference of everything used in the code so far, one line per item, grouped as Kotlin language → stdlib → coroutines → Android platform → Compose runtime/layout/modifiers → Material 3 → Media3/Guava → a map of the project's own files and functions.
+- C# analogies where they help. To be extended whenever new APIs appear.
+
+### Added: `SeekBar.kt` — `PlayerSeekBar(player, modifier)`
+- **Problem:** the slider logic (`isSeeking`/`seekPosition`, progress fraction, "time label follows the thumb", one real seek on release) was copied in `TrackScreen` (for the mini player) and `NowPlayingScreen`, ~30 lines each. A fix like the "frozen slider" one would have had to be done twice.
+- **Fix:** one composable that owns its drag state and draws `Slider` + time `Row`. Both screens call it.
+- `progress` uses **`when` without a subject** instead of an `if / else if / else` chain.
+- It has no padding of its own, the caller decides: the mini player passes `Modifier.padding(horizontal = 16.dp)`, the "Now" tab is already inside a padded `Column`.
+- Each call site gets its own drag state, because `remember` belongs to that call. That's fine, since the two are never on screen together.
+
+### Changed
+- **`NowPlayingBar`**: five seek parameters (`progress`, `positionMs`, `durationMs`, `onSeekChange`, `onSeekFinished`) replaced by `player: PlayerState`, passed through to `PlayerSeekBar`. The buttons still use callbacks. "◀" → "◀◀" to match the "Now" tab.
+- **`TrackScreen`**: its own `isSeeking`/`seekPosition` and the seek arguments are gone. It now gets `currentTrack: Track?` from `AppScaffold` instead of computing it again. The old local copy is deleted, otherwise it would **shadow** the parameter (Kotlin only warns).
+- **`TrackRow`** uses `ArtworkThumb(uri, 48.dp, 128)` instead of a copy of its code. The leftover `val artwork = rememberArtwork(...)` was removed too: it was unused but still ran, so every row decoded its cover twice.
+- **`ArtworkThumb`**: `modifier.run { size(size)... }` → `modifier.size(size)...`. `run` made `modifier` the `this` of the block, so it was a detour to the same call.
+- **`loadTracks`**: `artist`/`album` go through `?.takeIf { it != MediaStore.UNKNOWN_STRING }`. MediaStore returns the text `"<unknown>"` for untagged files, not `null`. Now it becomes `null` once, at the source, and the `?: "Unknown Artist"` fallbacks in the screens finally work.
+- Comments added or updated for the above.
+
+### Bug fixed during development
+- **Gradle broken by an IDE quick-fix:** an "add dependency" fix added `androidx.compose.runtime` with a hard-coded version `1.12.1`, and the edits also removed `compose-bom` from `libs.versions.toml` and both `platform(libs.androidx.compose.bom)` lines from `app/build.gradle.kts`. The Compose libraries are listed **without versions** because the **BOM (Bill of Materials)** supplies a matching set. Without it Gradle has no version to fetch, so the build fails. Both files were reverted with `git checkout --`, then Gradle sync.
+- **Lesson:** if a quick-fix offers to *add a library* for something that worked before, the real fix is usually a missing `import`.
+
+### Known issues / next steps
+- `PlaybackService.kt:172`: `AcceptedResultBuilder(session)` is deprecated (compiler warning).
+- `NowPlayingBar` takes both `player` and separate button callbacks. That works, but it's mixed. It could take only `track` + `player` later.
+- Still open: artwork cache (Coil), notification title for untagged files (`MediaMetadata`), empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
