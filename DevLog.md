@@ -721,3 +721,33 @@ This resolves most of the "Known issues" from the previous entry (all except the
 ### Known issues / next steps
 - `FolderPicker.kt` now holds `FoldersScreen`, not a picker. Rename it to `FoldersScreen.kt` (Shift+F6).
 - Still open: `AcceptedResultBuilder(session)` deprecation, artwork cache (Coil), notification title for untagged files (`MediaMetadata`), empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
+
+---
+
+## 2026-11-15 (late night) — Tab icons, 0.1 closed in DECISIONS.md
+
+### Changed: `DECISIONS.md` / `IDEAS.md`
+- **Version 0.1 marked done.** All five planned items are ticked, plus a "Done beyond the plan" list: IDEAS #2, #4, #5 and the features that came up along the way.
+- **Plan revised, because the order shifted.** Cover art was started right after 0.1, so:
+  - **0.2** = library and cover art (in progress)
+  - **0.3** = synced lyrics (+ manual offset)
+  - **0.4** = metadata override table + online cover art
+  - YouTube downloading moved to **0.5**; playlists are postponed until Room arrives.
+- "Album art search order" step 1 now matches the code: `loadThumbnail` instead of `MediaMetadataRetriever.embeddedPicture`. It decodes straight to the needed size and needs no retriever object.
+- In `IDEAS.md` the done ideas are replaced by *"Done in 0.1 → DECISIONS.md"* instead of being deleted. DevLog refers to ideas by number, and deleting lines would renumber the list.
+
+### Added: icons in the bottom navigation
+- Five vector drawables in `res/drawable/` (`ic_queue`, `ic_playing`, `ic_playlists`, `ic_folder`, `ic_download`): Material icons added via Vector Asset, Apache 2.0 (compatible with GPLv3).
+- `enum class Tab(val label: String, @param:DrawableRes val icon: Int)`. Each tab now carries its icon.
+- **`R.drawable.ic_queue` is an `Int`.** Android generates an ID number for every resource in `res/`. The ID is not the image: `painterResource(id)` loads it, and `Icon(painter, contentDescription)` draws it, tinted with the theme color (selected/unselected colors come from `NavigationBarItem`).
+- **`@DrawableRes`** marks the `Int` as a drawable ID, so Android Studio flags a wrong kind of ID (for example a string ID).
+- `label = null` stays, so only icons are shown. `tab.label` becomes `contentDescription`, which screen readers announce.
+
+### Bugs fixed during development
+- **"Too many arguments for 'constructor(label: String): Tab'":** the enum values got a second argument (`R.drawable...`), but the constructor still had only `label`. Enum values are constructor calls, so the parameter has to be declared.
+- **"Unresolved reference 'Icon'":** missing `import androidx.compose.material3.Icon`. The second error, "Unresolved reference 'icon'", came from the enum, not from the import.
+- **Warning "This annotation is currently applied to the value parameter only, but in the future it will also be applied to field":** a `val` in a constructor is both a parameter and a property, so the annotation's target is ambiguous. The **use-site target** `@param:DrawableRes` states it explicitly.
+
+### Known issues / next steps
+- Four of the five icon files are untracked in git (only `ic_download.xml` was staged): `git add app/src/main/res/drawable/` before committing.
+- Still open: see DECISIONS.md, version 0.2.

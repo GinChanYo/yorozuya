@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -30,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.media3.common.Player
@@ -199,7 +201,14 @@ fun AppScaffold(){
                     NavigationBarItem(
                         selected = currentTab == tab,
                         onClick = {currentTab = tab},
-                        icon = {Text(tab.label)},
+                        // painterResource - loads the vector drawable by its id; Icon tints it with the theme color
+                        // (selected/unselected colors come from NavigationBarItem)
+                        icon = {
+                            Icon(
+                                painter = painterResource(tab.icon),
+                                contentDescription = tab.label
+                            )
+                        },
                         label = null
                     )
                 }

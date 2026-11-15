@@ -20,7 +20,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | Smart cast | After `if (x == null) return`, compiler treats `x` as non-null. |
 | `data class` | Class with auto `equals`/`hashCode`/`toString`/`copy` (like C# `record`). |
 | `class A : B()` | Inheritance; `()` calls base constructor. |
-| `enum class Tab(val label: String)` | Enum whose values carry properties. |
+| `enum class Tab(val label: String, val icon: Int)` | Enum whose values carry properties; each value is a constructor call `QUEUE("Queue", R.drawable.ic_queue)`. |
 | `Tab.entries` | List of all enum values (`Enum.GetValues`). |
 | `companion object` | Holder for "static" members. |
 | `const val` | Compile-time constant (C# `const`), primitives/String only. |
@@ -33,6 +33,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `override fun` | Override a base/interface member (explicit keyword required). |
 | Shadowing | A local with the same name as a parameter hides it; Kotlin only warns ("Name shadowed"). |
 | `@Annotation` | Metadata, e.g. `@Composable`, `@Stable`, `@OptIn`. |
+| `@param:Annotation` | Use-site target: apply to the constructor parameter (not the property/field) of a `val` in a constructor. |
 | `when (x) { A -> ...; else -> ... }` | Switch expression; returns a value. Exhaustive over enums → no `else`. |
 | `when { cond -> ... }` | `when` without subject = if/else-if chain. |
 | `if` as expression | `val c = if (a) x else y` (no ternary operator in Kotlin). |
@@ -124,6 +125,9 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Manifest.permission.READ_MEDIA_AUDIO` | Runtime permission to read audio files. |
 | `ContextCompat.checkSelfPermission(...)` | Is the permission granted? Compare with `PackageManager.PERMISSION_GRANTED`. |
 | `ActivityResultContracts.RequestPermission()` | Contract for the system permission dialog. |
+| `R.drawable.name` | Generated `Int` id of a file in `res/drawable/`; not the image itself. |
+| `@DrawableRes` | Marks an `Int` as a drawable id, so Android Studio flags wrong ids. |
+| Vector Asset | Android Studio: right-click `res` → New → Vector Asset, adds Material icons as XML. |
 | `Build.VERSION.SDK_INT` | Android version of the device (theme uses it). |
 | `IOException` | I/O error (missing cover, unreadable file). |
 | `enableEdgeToEdge()` | Draw behind status/navigation bars. |
@@ -191,6 +195,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `TextOverflow.Ellipsis` | Cut overflow with "…". |
 | `TextAlign.Center` | Center text lines. |
 | `Image(bitmap, contentDescription, contentScale, modifier)` | Draw an `ImageBitmap`. `contentDescription = null` = decorative. |
+| `Icon(painter, contentDescription)` | Small tinted icon (Material 3); color comes from the surrounding component. |
+| `painterResource(R.drawable.x)` | Load a drawable resource (e.g. vector XML) as a `Painter`. |
 | `ContentScale.Crop` | Fill the box, trim overflow, keep proportions. |
 | `ImageBitmap`, `Bitmap.asImageBitmap()` | Compose bitmap type / conversion from Android `Bitmap`. |
 
@@ -203,7 +209,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `MaterialTheme.typography.displayLarge/headlineMedium/headlineSmall/bodyLarge/bodyMedium/bodySmall/labelSmall` | Text styles. |
 | `YorozuyaTheme { }` | Our theme (`ui/theme`): dynamic colors on Android 12+, dark/light by system. |
 | `Scaffold(bottomBar = { }) { innerPadding -> }` | Screen skeleton with slots; `innerPadding` = space bars take. |
-| `NavigationBar { NavigationBarItem(selected, onClick, icon, label) }` | Bottom tab bar. |
+| `NavigationBar { NavigationBarItem(selected, onClick, icon, label) }` | Bottom tab bar. `label = null` → icon only. |
 | `Surface(color, tonalElevation)` | Background container; elevation tints color. |
 | `TextButton(onClick) { }` | Flat button with content. |
 | `Slider(value, onValueChange, onValueChangeFinished)` | Draggable 0..1 bar. |
@@ -259,7 +265,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 |---|---|---|
 | `Track.kt` | `data class Track(id, uri, title, artist?, album?, duration, relativePath)` | One song from MediaStore. |
 | `TrackLoader.kt` | `loadTracks(context): List<Track>` | Query MediaStore for music. |
-| `Tabs.kt` | `enum class Tab(label)` | `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`. |
+| `Tabs.kt` | `enum class Tab(label, icon)` | `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`; icon = `R.drawable.ic_*`. |
 | `MainActivity.kt` | `MainActivity` | Entry point; `setContent { YorozuyaTheme { AppScaffold() } }`. |
 | | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState`, `library`, filtered `tracks`. |
 | | `TrackScreen(player, tracks, currentTrack, hasPermission, listState)` | Queue tab: buttons, (already filtered) list, mini player, auto-scroll. |
