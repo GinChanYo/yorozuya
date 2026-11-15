@@ -3,8 +3,10 @@ package io.github.ginchanyo.yorozuya
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -71,6 +73,8 @@ fun NowPlayingBar(
                 verticalAlignment = Alignment.CenterVertically
             )
             {
+                ArtworkThumb(uri = track.uri, size = 40.dp, sizePx = 96)
+                Spacer(modifier = Modifier.width(12.dp))
                 // weight(1f) - take all width left after other children (the button), pushing button to the right edge.
                 // Available only inside Row/Column scope, same idea as align in Box
                 Column(modifier = Modifier.weight(1f)) {

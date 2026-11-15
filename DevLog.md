@@ -626,3 +626,34 @@ This resolves the "Repeat mode isn't saved" note from the previous entry. Same f
 
 ### Known issues / next steps
 - Still open: notification title for untagged files (`MediaMetadata`), repeat icons on the "Now" tab, empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
+
+---
+
+## 2026-11-15 (later) — Embedded artwork: Now tab, track list, mini player
+
+### Added: `Artwork.kt`
+- `rememberArtwork(uri, sizePx = 512): ImageBitmap?` loads the cover embedded in the audio file with `contentResolver.loadThumbnail(uri, Size(sizePx, sizePx), null)` and converts it with `asImageBitmap()`.
+- **`produceState`** connects async work to Compose. It starts a coroutine, and whatever is assigned to `value` becomes state the screen observes: `null` first, then the image. `uri` is the key, so a track change restarts the load (same idea as `LaunchedEffect` keys).
+- **`withContext(Dispatchers.IO)`** runs the blocking file read on a background thread pool made for disk/network waiting, so the UI doesn't freeze, and returns the result back.
+- No cover (or an unreadable file) → `IOException` → `null`, and the caller draws a "♪" placeholder.
+- `sizePx` asks for a small decode where a small picture is enough: 512 on the Now tab, 128 in list rows, 96 in the mini player. Decoding a full-size cover for a 48dp box would waste memory.
+- `ArtworkThumb(uri, size, sizePx, modifier)` is a reusable small cover: a `Box` with `size`, `clip(RoundedCornerShape(4.dp))` and a `surfaceVariant` background, holding either the `Image` or "♪".
+
+### Changed
+- **`NowPlayingScreen`**: the square placeholder now shows the artwork. `Image(bitmap, contentDescription = null, contentScale = ContentScale.Crop, Modifier.fillMaxSize())`. `Crop` fills the square and trims the overflow instead of stretching.
+- **`TrackRow`** (`TrackList.kt`): `Column` → `Row` of [48dp cover, 12dp `Spacer`, text `Column(Modifier.weight(1f))`]. `clickable` and padding stay on the outer `Row`, so the whole row is one tap target.
+- **`NowPlayingBar`**: `ArtworkThumb(size = 40.dp, sizePx = 96)` before the title.
+- Now tab buttons made consistent (`a249072`).
+
+### Bugs fixed during development
+- **`if/else` inside `Box(...)`:** the `if` was written inside the parentheses (parameters), and the `else` ended up after `)`. Content goes in the trailing lambda `Box(params) { content }`. The `modifier`/`contentAlignment` were lost in the same edit and restored.
+- **`TrackRow` didn't compile:** a missing `}` for the new `Row`, missing imports (`Row`, `size`, `clip`, `background`, `Image`), and the inner `Column` still had the old outer modifiers (`fillMaxWidth`, `clickable`, `padding`), which would have taken the whole width and created a second tap target. It was replaced by `Modifier.weight(1f)`.
+- `weight` exists only inside `Row { }`/`Column { }`: the content lambda has `RowScope` as receiver (lambda with receiver).
+
+### Known issues / next steps
+- **`TrackRow` duplicates `ArtworkThumb`:** its `Box`/`Image`/"♪" block is the same code. It can be replaced by `ArtworkThumb(track.uri, size = 48.dp, sizePx = 128)`, and then the unused imports can be removed.
+- **`ArtworkThumb` uses `modifier.run { size(size)... }`:** it works, but `modifier.size(size).clip(...)` is the same thing, simpler.
+- **"<unknown>" artist:** MediaStore returns the literal string `"<unknown>"` for untagged files, not `null`, so the `?: "Unknown Artist"` fallback never fires. It could be mapped to `null` in `loadTracks`.
+- **No artwork cache:** a row that scrolls out and back reloads its thumbnail from disk. Coil (planned in DECISIONS.md) would cache it.
+- Mini player buttons: `◀` vs `▶▶` — the Now tab uses `◀◀`.
+- Still open: notification title for untagged files (`MediaMetadata`), empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread.
