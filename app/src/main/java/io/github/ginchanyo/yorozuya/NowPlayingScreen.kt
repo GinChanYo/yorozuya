@@ -1,5 +1,6 @@
 package io.github.ginchanyo.yorozuya
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,7 +49,7 @@ fun NowPlayingScreen(
     // but it's UI-only state of this screen, so it isn't in PlayerState
     var isSeeking by remember { mutableStateOf(false) }
     var seekPosition by remember { mutableStateOf(0f) }
-
+    val artwork = rememberArtwork(track.uri)
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -63,7 +65,16 @@ fun NowPlayingScreen(
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ){
-            Text("♪", style = MaterialTheme.typography.displayLarge)
+            if (artwork != null){
+                Image(
+                    bitmap = artwork,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text("♪", style = MaterialTheme.typography.displayLarge)
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
