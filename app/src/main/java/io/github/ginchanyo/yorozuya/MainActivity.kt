@@ -229,7 +229,11 @@ fun AppScaffold() {
 
     val favoriteDao = remember { YorozuyaDatabase.get(context).favoriteDao() }
     val favoriteIds by remember { favoriteDao.observeIds()}.collectAsState(initial = emptyList())
-
+    val favoriteTracks = remember(allTracks, favoriteIds){
+        val byId = allTracks.associateBy { it.id }
+        favoriteIds.mapNotNull { byId[it] }
+    }
+    val favoriteListState = rememberLazyListState()
     val isCurrentFavorite = currentTrack != null && currentTrack.id in favoriteIds
     val toggleFavorite: () -> Unit = {
         val id = currentTrack?.id
@@ -308,7 +312,11 @@ fun AppScaffold() {
                     showMessage = showMessage,
                     isFavorite = isCurrentFavorite,
                     onToggleFavorite = toggleFavorite)
-                Tab.PLAYLISTS -> Placeholder("Playlists")
+                Tab.PLAYLISTS -> FavoriteScreen(
+                    player = player,
+                    tracks = favoriteTracks,
+                    listState = favoriteListState,
+                )
                 Tab.STORAGE -> FoldersScreen(allTracks = allTracks, library = library)
                 Tab.DOWNLOADER -> Placeholder("Downloader")
             }

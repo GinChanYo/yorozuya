@@ -17,4 +17,7 @@ interface FavoriteDao {
 
     @Query("DELETE FROM favorites WHERE trackId = :trackId")
     suspend fun remove(trackId: Long)
+
+    @Query("SELECT trackId FROM favorites ORDER BY addedAt Desc")
+    fun observeIdsNewestFirst(): Flow<List<Long>>
 }
