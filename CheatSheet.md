@@ -1,7 +1,7 @@
 # Yorozuya Cheat Sheet
 
 Everything used in the code so far, one short line each. C# analogies where they help.
-Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform → Compose runtime → Compose layout → Modifiers → Compose UI elements → Material 3 → Media3 → Gradle → Project code.
+Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform → Compose runtime → Compose layout → Modifiers → Compose UI elements → Material 3 → Media3 → Room → Gradle → Project code.
 
 ---
 
@@ -23,6 +23,10 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `enum class Tab(val label: String, val icon: Int)` | Enum whose values carry properties; each value is a constructor call `QUEUE("Queue", R.drawable.ic_queue)`. |
 | `Tab.entries` | List of all enum values (`Enum.GetValues`). |
 | `companion object` | Holder for "static" members. |
+| `abstract class` / `abstract fun` | Can't be instantiated / no body, subclass implements it (same as C#). |
+| `interface` with bodiless `fun` | Contract; Room generates the implementing class for a `@Dao`. |
+| `@Volatile` | Field always read from memory, visible to all threads (C# `volatile`). |
+| `synchronized(lock) { }` | Only one thread at a time inside the block (C# `lock`). |
 | `const val` | Compile-time constant (C# `const`), primitives/String only. |
 | `private` | Visible only inside the class/file. |
 | `class A(private val x: T)` | Constructor parameter that is also a field (C# primary constructor). |
@@ -64,6 +68,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `set + x`, `set - x` | New set with/without element (the old set is unchanged; a new object is what `mutableStateOf` notices). |
 | `map { }` | Transform each item (`Select`). |
 | `mapNotNull { }` | `map` dropping nulls. |
+| `associateBy { it.id }` | `Map` key → item (`ToDictionary`); `map[key]` returns `T?`. |
+| `also { }` | Do something with the value (`it`), return the value itself: `build().also { instance = it }`. |
 | `flatMap { }` | Each item → list, merged (`SelectMany`). |
 | `filter { }` | Keep matching (`Where`). |
 | `groupBy { }` | Map key → list of items (`GroupBy`). |
@@ -96,6 +102,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `job.cancel()` | Cancel a coroutine (e.g. one waiting in `showSnackbar` → the bubble disappears). No effect if it already finished. |
 | `withContext(Dispatchers.IO) { }` | Run block on the I/O thread pool, return result to caller. |
 | `Dispatchers.IO` | Thread pool for disk/network waiting. |
+| `suspend fun` | Function that can pause a coroutine; callable only from a coroutine (`async Task`). |
+| `Flow<T>` | Stream of values over time (`IAsyncEnumerable`/`IObservable`); Room emits a new value on every table change. |
 
 ## 4. Android platform
 
@@ -150,6 +158,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `@Stable` | Promise to Compose that changes are reported through state. |
 | `LaunchedEffect(keys) { }` | Run a coroutine when entering composition / when keys change; cancelled on leave. `Unit` key = once. |
 | `rememberCoroutineScope()` | Scope for starting coroutines yourself, e.g. from `onClick`; cancelled when the composable leaves. |
+| `flow.collectAsState(initial)` | `Flow` → Compose `State`; recomposes on each new value. Wrap the flow in `remember { }` so it isn't recreated. |
 | `DisposableEffect(key) { ... onDispose { } }` | Effect with cleanup when leaving composition. |
 | `produceState(initial, key) { value = ... }` | Coroutine that produces state; returns `State`, read `.value`. |
 | `LocalContext.current` | Current `Context` inside a composable. |
@@ -222,6 +231,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `colorScheme.inverseSurface/inverseOnSurface` | Contrasting colors for bubbles (dark in light theme). |
 | `TextButton(onClick = { action }) { Text(...) }` | `onClick` runs once on tap; trailing `{ }` is what's drawn, runs on every recomposition - no actions there. |
 | `TextButton(onClick) { }` | Flat button with content. |
+| `IconButton(onClick) { Icon(...) }` | Round tappable area for an icon. |
 | `Slider(value, onValueChange, onValueChangeFinished)` | Draggable 0..1 bar. |
 | `Checkbox(checked, onCheckedChange)` | Checkbox. |
 | `HorizontalDivider()` | Horizontal line. |
@@ -260,7 +270,21 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Futures.immediateFuture(x)` | Already-completed future. |
 | `ImmutableList.of(...)` | Immutable list. |
 
-## 11. Gradle
+## 11. Room 3 (database, `androidx.room3`)
+
+| Name | Meaning |
+|---|---|
+| `@Entity(tableName = "x") data class` | One table; each property = column. |
+| `@PrimaryKey` | Unique key column; duplicates are rejected. |
+| `@Dao interface` | Database access functions; Room generates the implementation. |
+| `@Query("SELECT ... WHERE id = :id")` | SQL for the function below it; `:id` = function parameter. Checked at build time. |
+| `@Insert(onConflict = OnConflictStrategy.IGNORE)` | Insert a row; IGNORE = skip if the key exists. |
+| `@Database(entities = [...], version = 1)` | Database class: `abstract class X : RoomDatabase()`, `abstract fun xDao()`. |
+| `Room.databaseBuilder<X>(context, name)` | Create the database; `.setDriver(BundledSQLiteDriver())`, `.setQueryCoroutineContext(Dispatchers.IO)`, `.build()`. |
+| `room3 { schemaDirectory(...) }` | Export table layout to JSON (commit it; used for migrations). |
+| Function returning `Flow<T>` | Observable query, not `suspend`. One-off reads/writes are `suspend`. |
+
+## 12. Gradle
 
 | Name | Meaning |
 |---|---|
@@ -268,8 +292,11 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `app/build.gradle.kts` | App module build script; `dependencies { implementation(...) }`. |
 | `platform(libs.androidx.compose.bom)` | Compose BOM: supplies one matching set of versions, so Compose libraries are listed without versions. Never remove it. |
 | Gradle sync | Android Studio re-reads build files (elephant icon / "Sync Now"). |
+| `group:artifact:version` | Maven coordinate; group becomes the folder path on the repository (`androidx.room3` → `androidx/room3/`). |
+| `[plugins]` + `alias(libs.plugins.x)` | Gradle plugin from the catalog; `apply false` in the root file, applied in `app`. |
+| KSP, `ksp(libs.x)` | Kotlin Symbol Processing: generates code from annotations at build time (Room). |
 
-## 12. Project code
+## 13. Project code
 
 | File | Item | Purpose |
 |---|---|---|
@@ -277,15 +304,16 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `TrackLoader.kt` | `loadTracks(context): List<Track>` | Query MediaStore for music. |
 | `Tabs.kt` | `enum class Tab(label, icon)` | `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`; icon = `R.drawable.ic_*`. |
 | `MainActivity.kt` | `MainActivity` | Entry point; `setContent { YorozuyaTheme { AppScaffold() } }`. |
-| | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState`, `library`, filtered `tracks`, snackbar + `showMessage`. |
-| | `TrackScreen(player, tracks, currentTrack, hasPermission, listState, showMessage)` | Queue tab: buttons, (already filtered) list, mini player, auto-scroll. |
+| | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState`, `library`, filtered `tracks`, snackbar + `showMessage`, `favoriteIds`/`favoriteTracks`, `toggleFavorite`. |
+| `QueueScreen.kt` | `QueueScreen(player, tracks, currentTrack, hasPermission, listState, showMessage)` | Queue tab: buttons, (already filtered) list, mini player, auto-scroll. |
+| `FavoriteScreen.kt` | `FavoriteScreen(player, tracks, listState)` | Favorites list (temporarily on the Playlists tab). |
 | | `Placeholder(name)` | Stub screen for unfinished tabs. |
-| `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick)` | Scrollable track list. |
+| `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick, bottomPadding)` | Scrollable track list; `bottomPadding` = space under the last item. |
 | | `TrackRow(track, isCurrent, isPlaying, onClick)` | One row: cover + title/artist. |
 | `NowPlayingBar.kt` | `NowPlayingBar(track, isPlaying, on...Click, player)` | Mini player: seek bar, cover, title, prev/play/next. |
 | | `formatTime(ms)` | `83500` → `"1:23"`. |
 | `SeekBar.kt` | `PlayerSeekBar(player, modifier)` | Slider + time labels with own drag state; used by mini player and "Now" tab. |
-| `NowPlayingScreen.kt` | `NowPlayingScreen(player, track?, showMessage)` | "Now" tab: big cover, info, slider, all controls. |
+| `NowPlayingScreen.kt` | `NowPlayingScreen(player, track?, showMessage, isFavorite, onToggleFavorite)` | "Now" tab: big cover, info, favorite button, slider, all controls. |
 | `Artwork.kt` | `rememberArtwork(uri, sizePx): ImageBitmap?` | Load embedded cover off the main thread. |
 | | `ArtworkThumb(uri, size, sizePx, modifier)` | Small rounded cover with "♪" fallback. |
 | `FolderPicker.kt` | `buildFolderList(tracks, includeSubfolders)` | `(path, count)` pairs for the Folders tab. |
@@ -297,10 +325,14 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `PlayerConnection.kt` | `class PlayerState` | UI-side playback state: `controller`, `currentTrackId`, `isPlaying`, `shuffleEnabled`, `repeatMode`, `position`, `duration`. |
 | | `syncFrom(p)` | Copy current state after connecting. |
 | | `playQueue(tracks, startIndex)` | Replace queue and play. |
+| | `playOrToggle(track, queue)` | List tap: playing track → pause/resume, other → play queue from it. |
 | | `togglePlayPause()`, `next()`, `previous()`, `seekTo(ms)`, `toggleShuffle()`, `cycleRepeat()` | Controls. |
 | | `rememberPlayerState()` | Connect to service, listen, poll position every 500 ms. |
 | | `repeatModeName(mode)` | `"Off"` / `"All"` / `"One"` for button text and messages. |
 | `PlaybackService.kt` | `PlaybackService : MediaSessionService` | Owns `ExoPlayer` and `MediaSession`, notification, "Close" button. |
 | | `saveState()` / `restoreState(player)` | Persist queue, index, position, shuffle, repeat in prefs `playback_state`. |
 | | `CallBack` | Session callback: allows and handles `stopCommand`. |
+| `FavoriteEntity.kt` | `FavoriteEntity(trackId, addedAt)` | Row of table `favorites`. |
+| `FavoriteDao.kt` | `observeIds()`, `observeIdsNewestFirst()`, `add(fav)`, `remove(id)` | Favorites queries. |
+| `YorozuyaDatabase.kt` | `YorozuyaDatabase.get(context)` | Singleton Room database `yorozuya.db`. |
 | Prefs `library` | `paths` (string set), `subfolders` (bool) | Folder filter, read/written by `LibraryFilter`. |

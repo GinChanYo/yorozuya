@@ -780,3 +780,53 @@ This resolves most of the "Known issues" from the previous entry (all except the
 ### Known issues / next steps
 - On Queue the pill briefly covers the mini player (both at the bottom).
 - Still open: see DECISIONS.md, version 0.2.
+
+---
+
+## 2026-11-16 — Room database, favorites, `QueueScreen` split
+
+### Added: Room 3 (database)
+- **Gradle:** `room3-runtime`, `room3-compiler` (through **KSP**, a compiler plugin that generates code from annotations at build time), and `sqlite-bundled` in `libs.versions.toml`. The plugins `com.google.devtools.ksp` and `androidx.room3` are declared in both build files.
+- `room3 { schemaDirectory("$projectDir/schemas") }` makes Room export the table layout to `app/schemas/.../1.json`. That file is committed: future migrations (version 2+) are checked against it.
+- **`FavoriteEntity.kt`:** `@Entity(tableName = "favorites") data class FavoriteEntity(@PrimaryKey val trackId: Long, val addedAt: Long = System.currentTimeMillis())`. One row = one favorite track. The MediaStore id is the key, so a track can't be added twice.
+- **`FavoriteDao.kt`:** `@Dao interface` with functions that have **no body**. Room reads the annotation + signature and KSP generates the implementation.
+  - `observeIds(): Flow<List<Long>>`. A `Flow` is re-emitted by Room every time the table changes, so it isn't `suspend`.
+  - `suspend fun add(...)` with `@Insert(onConflict = IGNORE)`, `suspend fun remove(trackId)` with `@Query("DELETE ...")`. One-off calls are `suspend` and run in a coroutine.
+  - `observeIdsNewestFirst()` (`ORDER BY addedAt DESC`) has been added but isn't used yet.
+- **`YorozuyaDatabase.kt`:** `@Database(entities = [FavoriteEntity::class], version = 1) abstract class ... : RoomDatabase()`.
+  - **Singleton:** `get(context)` uses `@Volatile` + `synchronized` (double-checked locking, the same as in C#), so the whole app shares one database object.
+  - `Room.databaseBuilder<...>(context, name).setDriver(BundledSQLiteDriver()).setQueryCoroutineContext(Dispatchers.IO).build()`. The bundled driver ships its own SQLite instead of using the device's copy, and queries run on the I/O thread pool.
+
+### Added: favorite button on the "Now" tab
+- `NowPlayingScreen` got `isFavorite: Boolean` and `onToggleFavorite: () -> Unit`, and shows an `IconButton { Icon(painterResource(ic_favorite / ic_favorite_border)) }` above the seek bar. The screen doesn't know about the database: data comes down, the event goes up.
+- **`AppScaffold`:**
+  - `favoriteDao` is created once with `remember`.
+  - `favoriteIds by remember { favoriteDao.observeIds() }.collectAsState(initial = emptyList())`. **`collectAsState`** turns a `Flow` into Compose `State`, so a database change recomposes the UI. The `remember` around the `Flow` is needed so that a new query isn't started on every recomposition.
+  - `toggleFavorite` uses `scope.launch { }` to call `add`/`remove` (they are `suspend`), then `showMessage(...)`.
+- Two new Material icons in `res/drawable/`: `ic_favorite.xml`, `ic_favorite_border.xml`.
+
+### Added: `FavoriteScreen.kt` (temporary, on the Playlists tab)
+- `favoriteTracks = remember(allTracks, favoriteIds) { val byId = allTracks.associateBy { it.id }; favoriteIds.mapNotNull { byId[it] } }`.
+  - **`associateBy`** builds a `Map` id → track (`ToDictionary`). This avoids searching the whole list for every id.
+  - **`mapNotNull`** drops ids whose file is gone from the device.
+- `FavoriteScreen(player, tracks, listState)` shows a hint when the list is empty, otherwise a `TrackList`. It has its own `favoriteListState`, so its scroll position is independent of Queue.
+- Later the Playlists tab will hold real playlists, and favorites will become one of them.
+
+### Changed: refactoring
+- **`TrackScreen` → `QueueScreen`**, moved from `MainActivity.kt` to its own file. `MainActivity.kt` keeps only `MainActivity`, `AppScaffold` and `Placeholder`. Unused imports were removed.
+- **`PlayerState.playOrToggle(track, queue)`:** the "tap the playing track → pause, another one → play the list from it" logic. It's shared by Queue and Favorites instead of being duplicated in two lambdas.
+- **`TrackList(bottomPadding: Dp = 0.dp)`:** the 140.dp space under the last item was hard-coded. Now only `QueueScreen` passes it, because only Queue has the mini player overlay.
+- Imports in `PlaybackService.kt` and `PlayerConnection.kt` are sorted, and the wildcard `androidx.compose.runtime.*` is replaced with explicit imports.
+
+### Bugs fixed during development
+- **"Could not find androidx.room:room3-compiler:3.0.3":** wrong **group** in the catalog. Room 3 is published as `androidx.room3:room3-*`. Gradle turns `group:artifact:version` into a folder path on the repository, so one wrong word means a 404. The "Configuration cache state could not be cached" line above the error was just a side effect.
+- **`isFavorite = isCurrentFavorite` in the parameter list:** that's call syntax (a named argument). A declaration needs `name: Type`. The values are passed at the call site in `AppScaffold`.
+- **"Unresolved reference 'IconButton'/'Icon'" + "@Composable invocations can only happen from...":** missing imports. The second error was a side effect of the first.
+- **`YorozuyaDatabas`** typo, and a missing `import androidx.compose.runtime.collectAsState`.
+- **"Syntax error: Expecting member declaration" in `FavoriteDao.kt`:** a `@Query` without a function under it. An annotation must be attached to a declaration.
+
+### Known issues / next steps
+- `MainActivity` still collects `observeIds()` (unordered), so `observeIdsNewestFirst()` isn't used yet. Switch to it, or put `ORDER BY` into `observeIds()`.
+- Empty Favorites hint says "Song tab"; the tab is called "Now".
+- `toggleFavorite` decides add/remove by `favoriteIds`, which updates only after Room emits. Two very fast taps can both see the old value.
+- Stale comments: `PlayerConnection.kt:3` (wildcard import, now gone), `TrackList.kt:40` (140.dp now comes from the caller), `MainActivity.kt:127` (Scaffold comment is now above the favorites code), `MainActivity.kt:69` ("suspended" → the keyword is `suspend`).
