@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -225,6 +226,25 @@ fun AppScaffold() {
     val currentTrack = allTracks.firstOrNull { it.id == player.currentTrackId }
     // Scaffold - Material screen skeleton with slots (topBar, bottomBar...); innerPadding is the space
     // the bars take, so content isn't drawn under them
+
+    val favoriteDao = remember { YorozuyaDatabase.get(context).favoriteDao() }
+    val favoriteIds by remember { favoriteDao.observeIds()}.collectAsState(initial = emptyList())
+
+    val isCurrentFavorite = currentTrack != null && currentTrack.id in favoriteIds
+    val toggleFavorite: () -> Unit = {
+        val id = currentTrack?.id
+        if (id != null){
+            scope.launch(){
+                if (id in favoriteIds){
+                    favoriteDao.remove(id)
+                    showMessage("Removed from favorites")
+                } else {
+                    favoriteDao.add(FavoriteEntity(trackId = id))
+                    showMessage("Added to favorites")
+                }
+            }
+        }
+    }
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         // Custom look instead of the default full-width Snackbar: a small pill sized to its text.
@@ -282,7 +302,12 @@ fun AppScaffold() {
                     listState = listState,
                     showMessage = showMessage
                 )
-                Tab.NOW_PLAYING -> NowPlayingScreen(player = player, track = currentTrack, showMessage = showMessage)
+                Tab.NOW_PLAYING -> NowPlayingScreen(
+                    player = player,
+                    track = currentTrack,
+                    showMessage = showMessage,
+                    isFavorite = isCurrentFavorite,
+                    onToggleFavorite = toggleFavorite)
                 Tab.PLAYLISTS -> Placeholder("Playlists")
                 Tab.STORAGE -> FoldersScreen(allTracks = allTracks, library = library)
                 Tab.DOWNLOADER -> Placeholder("Downloader")

@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -19,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -32,6 +35,8 @@ fun NowPlayingScreen(
     track: Track?,
     // Shows a short bubble at the bottom (Snackbar in AppScaffold) - called from onClick, never from drawing code
     showMessage: (String) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier
 ){
     // Early return from a composable: draw the empty state and skip the rest.
@@ -90,6 +95,16 @@ fun NowPlayingScreen(
 
         // weight(1f) on a spacer pushes everything below it to the bottom of the screen
         Spacer(modifier = Modifier.weight(1f))
+        Row(modifier = Modifier.fillMaxWidth()){
+            IconButton(onClick = onToggleFavorite){
+                Icon(
+                    painter = painterResource(
+                        if (isFavorite) R.drawable.ic_favorite else R.drawable.ic_favorite_border
+                    ),
+                    contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites"
+                )
+            }
+        }
         PlayerSeekBar(player = player)
         // SpaceEvenly - equal gaps between buttons and at both edges
         Row(
