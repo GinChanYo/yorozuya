@@ -26,9 +26,7 @@ fun FavoriteScreen(
         currentTrackId = player.currentTrackId,
         isPlaying = player.isPlaying,
         listState = listState,
-        onTrackClick = { track ->
-            if (track.id == player.currentTrackId) player.togglePlayPause()
-            else player.playQueue(tracks,tracks.indexOf(track))
+        onTrackClick = { player.playOrToggle(it, tracks)
         },
         modifier = modifier.fillMaxSize()
     )

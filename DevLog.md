@@ -47,7 +47,7 @@ Queries the system's media database and returns `List<Track>`.
 
 ### Changed: `AndroidManifest.xml`
 - Added `<uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />`.
-- This is a *dangerous* permission. Declaring it is required but not sufficient: the user must also grant it at runtime (see `TrackScreen` below).
+- This is a *dangerous* permission. Declaring it is required but not sufficient: the user must also grant it at runtime (see `QueueScreen` below).
 
 ### Changed: `app/build.gradle.kts`
 - `minSdk` changed from 24 to **33**, matching DECISIONS.md. `READ_MEDIA_AUDIO` only exists since API 33, so older versions would need different permission code.
@@ -59,7 +59,7 @@ The template `Greeting` was replaced by real screens:
 
 - **`@Composable`:** a function that *describes* what the screen should look like. It doesn't build it imperatively. When data changes, Compose calls the function again; this is **recomposition**.
 
-- **`TrackScreen`** holds the permission logic and state:
+- **`QueueScreen`** holds the permission logic and state:
   - `LocalContext.current` gets the Context inside a composable.
   - **State that survives recomposition:** a plain `var tracks = emptyList<Track>()` would be recreated (and lost) on every recomposition. `remember { ... }` keeps the value between calls.
   - **`mutableStateOf`** makes a value observable. Assigning a new value makes Compose redraw the places that read it, with no manual `updateUI()` needed.
@@ -75,7 +75,7 @@ The template `Greeting` was replaced by real screens:
 
 - **`TrackRow`** is a `Column` with the title (`bodyLarge`, one line) and the artist (`bodySmall`, fallback "Unknown artist").
 
-**Flow:** app start → `TrackScreen` checks permission → if missing, the dialog is shown → user allows → `hasPermission = true` → recomposition → `LaunchedEffect(hasPermission)` calls `loadTracks` → `tracks` updated → recomposition → list appears.
+**Flow:** app start → `QueueScreen` checks permission → if missing, the dialog is shown → user allows → `hasPermission = true` → recomposition → `LaunchedEffect(hasPermission)` calls `loadTracks` → `tracks` updated → recomposition → list appears.
 
 ### Known issues / next steps
 - `loadTracks` runs on the main thread (`LaunchedEffect` runs on the main dispatcher). Fine for now; for large libraries, move it to `Dispatchers.IO` (`withContext(Dispatchers.IO) { loadTracks(context) }`).
@@ -94,7 +94,7 @@ The template `Greeting` was replaced by real screens:
 
 ### Changed: `MainActivity.kt`, tap a track to play / pause it
 
-**New state in `TrackScreen`:**
+**New state in `QueueScreen`:**
 - `val player = remember { ExoPlayer.Builder(context).build() }` creates the player once. `remember` keeps the same instance across recompositions, so a new player isn't built on every redraw.
 - `var currentTrackId by remember { mutableStateOf<Long?>(null) }` is the id of the loaded track, or `null` if nothing has been played yet.
 - `var isPlaying by remember { mutableStateOf(false) }` mirrors the player's play/pause state for the UI.
@@ -120,7 +120,7 @@ if (track.id == currentTrackId) {
 - **Bug fixed during development:** `currentTrackId = track.id` was missing at first. The id stayed `null`, so the comparison was always `false`: a second tap restarted the song instead of pausing it, and the highlight never appeared. Lesson: the player's internal state and the Compose state are separate. The UI only knows what you put into state yourself.
 
 **State hoisting (passing state down, events up):**
-- `TrackScreen` owns the state and the player. `TrackList` and `TrackRow` only receive values (`currentTrackId`, `isPlaying`) and a callback (`onTrackClick: (Track) -> Unit`, a function type: takes a `Track`, returns nothing).
+- `QueueScreen` owns the state and the player. `TrackList` and `TrackRow` only receive values (`currentTrackId`, `isPlaying`) and a callback (`onTrackClick: (Track) -> Unit`, a function type: takes a `Track`, returns nothing).
 - `TrackList` turns it into a per-row `onClick = { onTrackClick(track) }` and computes `isCurrent = track.id == currentTrackId`.
 
 **`TrackRow` visuals:**
@@ -199,7 +199,7 @@ override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
 ## 2026-11-11 (later) — Playback moved into `MediaSessionService`, UI controls it via `MediaController`
 
 ### Why
-Until now the `ExoPlayer` lived inside `TrackScreen`. Playback was tied to the screen: closing the app or rotating the device released the player. Android's way to keep audio running without the UI is a **Service**, a component with no screen whose lifetime is separate from the Activity. Media3 provides a ready-made one: `MediaSessionService`.
+Until now the `ExoPlayer` lived inside `QueueScreen`. Playback was tied to the screen: closing the app or rotating the device released the player. Android's way to keep audio running without the UI is a **Service**, a component with no screen whose lifetime is separate from the Activity. Media3 provides a ready-made one: `MediaSessionService`.
 
 New architecture:
 ```
@@ -301,7 +301,7 @@ future.addListener({
 
 **Why the rest of the code barely changed:** `MediaController` implements the same `Player` interface as `ExoPlayer`. `setMediaItems`, `prepare`, `play`, `pause`, `isPlaying`, `shuffleModeEnabled` are all the same calls. The only differences:
 - `player.` became `controller?.` (shuffle button) or `val mc = controller ?: return@TrackList` (track click).
-  - **`?: return@TrackList`** means "if the controller is null, leave this lambda". `@TrackList` is a **label**: a bare `return` inside a lambda would try to return from `TrackScreen` itself, so you name the lambda to return from.
+  - **`?: return@TrackList`** means "if the controller is null, leave this lambda". `@TrackList` is a **label**: a bare `return` inside a lambda would try to return from `QueueScreen` itself, so you name the lambda to return from.
 - Commands are no longer executed directly: the controller sends them to the session, and the session runs them on the real player. (Here the service runs in the same process as the UI, but it still communicates through the session's binder (IPC) channel, as if it were a different app.)
 
 **Bug fixed during development:** `override fun onIsPlayingChaged` (a missing "n") was red: `override` requires an existing method with exactly that name and signature in the parent type, and `Player.Listener` has none, so it "overrides nothing". Tip: use **Ctrl+O** (Override Methods) inside `object : ... { }` to generate the correct signature.
@@ -424,7 +424,7 @@ val pendingIntent = PendingIntent.getActivity(this, 0, intent,
   - Inside the bar, a **`Row`** places items horizontally, and `Modifier.weight(1f)` on the text column takes the remaining width, which pushes the button to the right edge. `weight` only exists inside `Row`/`Column`, for the same reason as `align`.
   - **`Surface`** + `tonalElevation` gives the bar a background, slightly tinted the way Material 3 shows a raised surface.
   - `maxLines = 1` + `TextOverflow.Ellipsis` cuts long titles to one line ending in "…".
-- **State hoisting:** the bar receives data plus a callback, `onPlayPauseClick: () -> Unit` (a function type, like C#'s `Action`). It doesn't know about the controller, so `TrackScreen` decides what a click does.
+- **State hoisting:** the bar receives data plus a callback, `onPlayPauseClick: () -> Unit` (a function type, like C#'s `Action`). It doesn't know about the controller, so `QueueScreen` decides what a click does.
 
 ### Added: the list scrolls to the playing track
 ```kotlin
@@ -434,7 +434,7 @@ LaunchedEffect(currentTrackId, tracks) {
     if (index >= 0) listState.scrollToItem(index)
 }
 ```
-- **`LazyListState`** holds the list's scroll position and lets code scroll it. It's created in `TrackScreen` and passed down to `TrackList` (`LazyColumn(state = listState)`), so the parent controls the scrolling.
+- **`LazyListState`** holds the list's scroll position and lets code scroll it. It's created in `QueueScreen` and passed down to `TrackList` (`LazyColumn(state = listState)`), so the parent controls the scrolling.
 - **The effect has two keys.** It re-runs when the track changes *and* when the tracks finish loading. When you return to the app, `currentTrackId` can arrive before the list, and with only one key the index would be -1 and nothing would scroll.
 - `scrollToItem` is a `suspend` function. A `LaunchedEffect` body is a coroutine, so it can be called there.
 
@@ -442,7 +442,7 @@ LaunchedEffect(currentTrackId, tracks) {
 - **The bar no longer covers the last track.** `LazyColumn(contentPadding = PaddingValues(bottom = 72.dp))` adds empty space *inside* the scrollable area after the last item. `Modifier.padding` would shrink the list instead.
 - **Double padding on `TrackList`:** `modifier = modifier` was removed from the call, so the Scaffold's `innerPadding` is applied once (by the `Box`).
 - **Build errors along the way:**
-  - The IDE's "Create parameter" quick-fix added a bogus `align` parameter to `TrackScreen` when `align` was used outside the `Box`.
+  - The IDE's "Create parameter" quick-fix added a bogus `align` parameter to `QueueScreen` when `align` was used outside the `Box`.
   - "Optimize imports" removed `Row`'s import while the file didn't compile. That one missing import also produced "@Composable invocations can only happen…" and "Unresolved reference 'weight'".
 
 ### Known issues / next steps
@@ -502,7 +502,7 @@ LaunchedEffect(currentTrackId, tracks) {
 
 ### Added: `MainActivity.kt`, Previous / Play-Pause / Next in `NowPlayingBar`
 - The bar now has three buttons, `◀`, `▶`/`⏸` and `▶▶`. They call `seekToPreviousMediaItem()` and `seekToNextMediaItem()` on the controller.
-- The callbacks are created in `TrackScreen` and passed in as parameters (state hoisting). The bar's buttons can only use the bar's own parameters. When the buttons were first placed in `TrackScreen`, `onPreviousClick` etc. were unresolved because those names only exist inside `NowPlayingBar`.
+- The callbacks are created in `QueueScreen` and passed in as parameters (state hoisting). The bar's buttons can only use the bar's own parameters. When the buttons were first placed in `QueueScreen`, `onPreviousClick` etc. were unresolved because those names only exist inside `NowPlayingBar`.
 
 ### Added: a repeat mode button (Off → All → One)
 - `repeatMode` holds a `Player.REPEAT_MODE_*` constant. A `when` picks the next mode and the button's label, and the mode goes to `controller?.repeatMode`.
@@ -550,7 +550,7 @@ LaunchedEffect(currentTrackId, tracks) {
 - The UI needs nothing extra: `syncFrom` reads `shuffleModeEnabled` when the controller connects.
 
 ### Changed: code split into files
-`MainActivity.kt` had grown to ~600 lines. It now holds only `MainActivity`, `TrackScreen`, `AppScaffold` and `Placeholder`. The rest moved out:
+`MainActivity.kt` had grown to ~600 lines. It now holds only `MainActivity`, `QueueScreen`, `AppScaffold` and `Placeholder`. The rest moved out:
 - `NowPlayingBar.kt` — mini player + `formatTime`.
 - `TrackList.kt` — `TrackList` and `TrackRow`.
 - `FolderPicker.kt` — `buildFolderList` and `FolderPickerDialog`.
@@ -562,7 +562,7 @@ LaunchedEffect(currentTrackId, tracks) {
   - `by mutableStateOf` works inside a class too: each field is observable on its own, so a composable redraws only when a field it reads changes.
   - **`@Stable`** promises Compose that every change goes through state fields, so it can skip redrawing composables that got this object when nothing they read changed.
 - **`rememberPlayerState()`** follows the Compose naming convention for "create once, keep across recompositions" composables (like `rememberLazyListState()`). It returns a value, so its name starts lowercase.
-  - It contains the `DisposableEffect` that connects the `MediaController` (moved from `TrackScreen`) and a listener that now also handles `onShuffleModeEnabledChanged` and `onRepeatModeChanged`.
+  - It contains the `DisposableEffect` that connects the `MediaController` (moved from `QueueScreen`) and a listener that now also handles `onShuffleModeEnabledChanged` and `onRepeatModeChanged`.
   - The 500 ms position/duration polling loop moved here too, so it keeps running on any tab. `delay(500.milliseconds)` uses `kotlin.time.Duration` instead of a bare number.
   - The `isSeeking` check was dropped from the loop: both screens show `seekPosition` while dragging, so it doesn't matter if `position` updates underneath.
 
@@ -578,15 +578,15 @@ LaunchedEffect(currentTrackId, tracks) {
 - It has its own `isSeeking`/`seekPosition`: that's UI-only drag state of this screen, so it isn't in `PlayerState`.
 
 ### Changed: state hoisting into `AppScaffold`
-- **Problem:** both tabs need the track list (`currentTrack` comes from it), but it lived inside `TrackScreen`. A tab's screen leaves composition when you switch away, so its `remember` values are lost — the list was reloaded from MediaStore on every return to Queue, and the polling loop stopped on the "Now" tab.
+- **Problem:** both tabs need the track list (`currentTrack` comes from it), but it lived inside `QueueScreen`. A tab's screen leaves composition when you switch away, so its `remember` values are lost — the list was reloaded from MediaStore on every return to Queue, and the polling loop stopped on the "Now" tab.
 - **Fix:** `allTracks`, `hasPermission`, the permission `launcher` and `loadTracks` moved up to `AppScaffold`, and are passed down as parameters: `TrackScreen(player, allTracks, hasPermission)`, `NowPlayingScreen(player, currentTrack)`. Rule: **state goes down, events go up**.
-- Parameters are read-only (`val`), so `TrackScreen` can't reassign `allTracks` — only the owner can.
-- The folder filter stays in `TrackScreen` (only Queue needs it). It is read from prefs right in `remember { mutableStateOf(prefs.get...) }`; the `remember` block runs once each time the screen appears. `prefs` must be declared above those lines.
+- Parameters are read-only (`val`), so `QueueScreen` can't reassign `allTracks` — only the owner can.
+- The folder filter stays in `QueueScreen` (only Queue needs it). It is read from prefs right in `remember { mutableStateOf(prefs.get...) }`; the `remember` block runs once each time the screen appears. `prefs` must be declared above those lines.
 
 ### Bugs fixed during development
 - **`enabled` / `mode` unresolved in listener overrides:** Android Studio generated the overrides with the interface's parameter names (`shuffleModeEnabled`, `repeatMode`), but the bodies used other names. `state.repeatMode = repeatMode` is fine: field of `state` on the left, parameter on the right (like `this.x = x` in C#).
-- **A second `PlayerState`:** `TrackScreen` received `player` as a parameter but still had `val player = rememberPlayerState()`, which hid the parameter and opened a second controller connection. Kotlin only warns about shadowing.
-- **Strange `align` parameter added to `TrackScreen`:** broken braces put `Modifier.align(...)` outside the `Box`, and an IDE quick-fix "created" it as a parameter. Fixing the braces made it unnecessary. If a quick-fix invents a parameter, look for a scope error first.
+- **A second `PlayerState`:** `QueueScreen` received `player` as a parameter but still had `val player = rememberPlayerState()`, which hid the parameter and opened a second controller connection. Kotlin only warns about shadowing.
+- **Strange `align` parameter added to `QueueScreen`:** broken braces put `Modifier.align(...)` outside the `Box`, and an IDE quick-fix "created" it as a parameter. Fixing the braces made it unnecessary. If a quick-fix invents a parameter, look for a scope error first.
 - **`tracks.indexOf` without `(track)`:** a function reference is not a call.
 - **NowPlayingScreen didn't compile:** `modifier: Modifier = modifier` (default pointed at itself, must be `= Modifier`), a missing comma after `.padding(24.dp)`, and missing imports (Alt+Enter → Import).
 - **`remember` inside `LaunchedEffect`:** "@Composable invocations can only happen from the context of a @Composable function". A `LaunchedEffect` body is a coroutine, not a composable. And the `var` inside it would have been a new local variable that disappears when the block ends.
@@ -615,12 +615,12 @@ This resolves the "Repeat mode isn't saved" note from the previous entry. Same f
 - **"Null cannot be a value of a non-null type 'Int'":** `prefs.getInt(KEY_REPEAT, null)`. The second argument is the default for a missing key, and its type is `Int`, which can't be null in Kotlin (only `Int?` can, like `int` vs `int?` in C#). `getString(key, null)` works only because its default is `String?`. `getInt`/`getLong`/`getBoolean` always need a real value. `Player.REPEAT_MODE_OFF` (= 0) is used instead of a bare `0` so the meaning is clear.
 
 ### Cleanup
-- Comments moved to the code they describe (mini-player description was on `TrackList`, the `DisposableEffect` and polling notes were left in `MainActivity`), placeholder comments replaced, new comments for `AppScaffold`, `Scaffold`, `Tab.entries`, `NowPlayingScreen`. Indentation fixed in `MainActivity.onCreate` and `TrackScreen`.
+- Comments moved to the code they describe (mini-player description was on `TrackList`, the `DisposableEffect` and polling notes were left in `MainActivity`), placeholder comments replaced, new comments for `AppScaffold`, `Scaffold`, `Tab.entries`, `NowPlayingScreen`. Indentation fixed in `MainActivity.onCreate` and `QueueScreen`.
 
 ### Fixed: `MainActivity.kt`, Queue list no longer jumps when returning from another tab
 - **Symptom:** going from "Now" back to Queue, the list started at the top and then animated down to the playing song, which looked like a reload.
-- **Cause:** a tab's screen leaves composition when switched away, so `TrackScreen`'s `rememberLazyListState()` was recreated at position 0 with no knowledge of visible rows. The auto-scroll `LaunchedEffect` also starts again on every appearance, saw the current track as "not visible" and scrolled to it. (`allTracks` was already hoisted, so MediaStore wasn't actually re-queried.)
-- **Fix:** same hoisting as `allTracks`. `val listState = rememberLazyListState()` moved to `AppScaffold` and is passed to `TrackScreen` as a `listState: LazyListState` parameter.
+- **Cause:** a tab's screen leaves composition when switched away, so `QueueScreen`'s `rememberLazyListState()` was recreated at position 0 with no knowledge of visible rows. The auto-scroll `LaunchedEffect` also starts again on every appearance, saw the current track as "not visible" and scrolled to it. (`allTracks` was already hoisted, so MediaStore wasn't actually re-queried.)
+- **Fix:** same hoisting as `allTracks`. `val listState = rememberLazyListState()` moved to `AppScaffold` and is passed to `QueueScreen` as a `listState: LazyListState` parameter.
 - **Why it's enough:** the `LazyListState` object keeps both the scroll position and its last `layoutInfo` (the rows that were visible). On return the list opens where it was, the effect runs but `index !in visibleItemsInfo` is false, so it doesn't scroll. If the song changed while on another tab, the new one isn't visible, so it still scrolls to it.
 - If it still jumps on the device, the fallback is a "last scrolled-to track id" check inside the effect.
 
@@ -669,7 +669,7 @@ This resolves most of the "Known issues" from the previous entry (all except the
 - C# analogies where they help. To be extended whenever new APIs appear.
 
 ### Added: `SeekBar.kt` — `PlayerSeekBar(player, modifier)`
-- **Problem:** the slider logic (`isSeeking`/`seekPosition`, progress fraction, "time label follows the thumb", one real seek on release) was copied in `TrackScreen` (for the mini player) and `NowPlayingScreen`, ~30 lines each. A fix like the "frozen slider" one would have had to be done twice.
+- **Problem:** the slider logic (`isSeeking`/`seekPosition`, progress fraction, "time label follows the thumb", one real seek on release) was copied in `QueueScreen` (for the mini player) and `NowPlayingScreen`, ~30 lines each. A fix like the "frozen slider" one would have had to be done twice.
 - **Fix:** one composable that owns its drag state and draws `Slider` + time `Row`. Both screens call it.
 - `progress` uses **`when` without a subject** instead of an `if / else if / else` chain.
 - It has no padding of its own, the caller decides: the mini player passes `Modifier.padding(horizontal = 16.dp)`, the "Now" tab is already inside a padded `Column`.
@@ -677,7 +677,7 @@ This resolves most of the "Known issues" from the previous entry (all except the
 
 ### Changed
 - **`NowPlayingBar`**: five seek parameters (`progress`, `positionMs`, `durationMs`, `onSeekChange`, `onSeekFinished`) replaced by `player: PlayerState`, passed through to `PlayerSeekBar`. The buttons still use callbacks. "◀" → "◀◀" to match the "Now" tab.
-- **`TrackScreen`**: its own `isSeeking`/`seekPosition` and the seek arguments are gone. It now gets `currentTrack: Track?` from `AppScaffold` instead of computing it again. The old local copy is deleted, otherwise it would **shadow** the parameter (Kotlin only warns).
+- **`QueueScreen`**: its own `isSeeking`/`seekPosition` and the seek arguments are gone. It now gets `currentTrack: Track?` from `AppScaffold` instead of computing it again. The old local copy is deleted, otherwise it would **shadow** the parameter (Kotlin only warns).
 - **`TrackRow`** uses `ArtworkThumb(uri, 48.dp, 128)` instead of a copy of its code. The leftover `val artwork = rememberArtwork(...)` was removed too: it was unused but still ran, so every row decoded its cover twice.
 - **`ArtworkThumb`**: `modifier.run { size(size)... }` → `modifier.size(size)...`. `run` made `modifier` the `this` of the block, so it was a detour to the same call.
 - **`loadTracks`**: `artist`/`album` go through `?.takeIf { it != MediaStore.UNKNOWN_STRING }`. MediaStore returns the text `"<unknown>"` for untagged files, not `null`. Now it becomes `null` once, at the source, and the `?: "Unknown Artist"` fallbacks in the screens finally work.
@@ -703,14 +703,14 @@ This resolves most of the "Known issues" from the previous entry (all except the
 - Initial values are read from prefs `library` (keys `paths`, `subfolders`, same as before, so a filter saved earlier still loads).
 - **Saved on every toggle** instead of on "Done", because the dialog is gone and the tab can be left at any moment.
 - Set `+`/`-` return a **new** set. `mutableStateOf` notices a new object being assigned. Changing the old set in place wouldn't trigger a redraw.
-- `filter(tracks)` is the old `when` from `TrackScreen`: nothing selected → all tracks; subfolders → `startsWith`; otherwise an exact folder match. The outer lambda names its parameter `t`, because the inner `any { }` already uses `it`.
+- `filter(tracks)` is the old `when` from `QueueScreen`: nothing selected → all tracks; subfolders → `startsWith`; otherwise an exact folder match. The outer lambda names its parameter `t`, because the inner `any { }` already uses `it`.
 - `rememberLibraryFilter()` follows the same pattern as `rememberPlayerState()`.
 
 ### Changed: the "Folders" tab replaces the dialog
 - `FolderPickerDialog` (an `AlertDialog` opened by the "Directories" button on Queue) → `FoldersScreen(allTracks, library)` on the `Tab.STORAGE` tab. Same contents: the "subfolders" checkbox row, a divider, and a `LazyColumn(Modifier.weight(1f))` of folder checkboxes with track counts.
 - `FoldersScreen` doesn't own the filter. It reads and changes the `LibraryFilter` it receives.
 - **Hoisting again:** the filter is changed on one tab and used on another, so `library` and the filtered `tracks` live in `AppScaffold`. `tracks = remember(allTracks, library.selectedPaths, library.includeSubfolders) { library.filter(allTracks) }` is recomputed only when a key changes, not on every position poll.
-- **`TrackScreen`** gets `tracks` (already filtered) instead of `allTracks`, and knows nothing about folders. Its prefs, filter state, `folders`, "Directories" button and dialog are all gone. `currentTrack` is still looked up in `allTracks`, so the bar stays when the playing song is outside the selected folders.
+- **`QueueScreen`** gets `tracks` (already filtered) instead of `allTracks`, and knows nothing about folders. Its prefs, filter state, `folders`, "Directories" button and dialog are all gone. `currentTrack` is still looked up in `allTracks`, so the bar stays when the playing song is outside the selected folders.
 - Comments added or updated in `LibraryFilter.kt`, `FolderPicker.kt` and `MainActivity.kt`. The unused `import android.content.Context` was removed from `MainActivity.kt`.
 
 ### Bugs fixed during development
@@ -760,7 +760,7 @@ This resolves most of the "Known issues" from the previous entry (all except the
 - **`AppScaffold`** owns the bubble:
   - `val snackbarHostState = remember { SnackbarHostState() }` holds the currently shown message.
   - `val scope = rememberCoroutineScope()`: `showSnackbar` is a `suspend` function (it waits until the message disappears), so it needs a coroutine. **`rememberCoroutineScope` vs `LaunchedEffect`:** an effect starts its coroutine by itself when the screen appears; a scope lets *you* start coroutines later, for example from a click. Both are cancelled when the composable leaves.
-  - `val showMessage: (String) -> Unit = { text -> ... }` is a lambda stored in a variable and passed down to `TrackScreen` and `NowPlayingScreen` as a parameter. State goes down, events go up.
+  - `val showMessage: (String) -> Unit = { text -> ... }` is a lambda stored in a variable and passed down to `QueueScreen` and `NowPlayingScreen` as a parameter. State goes down, events go up.
   - `Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) { data -> ... } })`. Scaffold places it above the bottom bar, centered.
 - **Small pill instead of the default full-width Snackbar:** `SnackbarHost`'s trailing lambda draws each message (`data.visuals.message`) as `Surface(shape = RoundedCornerShape(50), color = inverseSurface, contentColor = inverseOnSurface) { Text(bodySmall, padding 16/8 dp) }`.
   - No width modifier, so the pill is only as wide as its text.

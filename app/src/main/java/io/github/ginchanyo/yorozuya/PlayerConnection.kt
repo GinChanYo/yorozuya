@@ -1,8 +1,15 @@
 package io.github.ginchanyo.yorozuya
 
-import android.content.ComponentName
 // ".*" - wildcard import: everything from the package (remember, mutableStateOf, DisposableEffect, getValue/setValue...)
-import androidx.compose.runtime.*
+import android.content.ComponentName
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -65,6 +72,12 @@ class PlayerState{
     fun togglePlayPause(){
         val mc = controller ?: return
         if (mc.isPlaying) mc.pause() else mc.play()
+    }
+
+    // Tap on a track in any list: the playing one - pause/resume, another one - play queue starting from it
+    fun playOrToggle(track: Track, queue: List<Track>){
+        if (track.id == currentTrackId) togglePlayPause()
+        else playQueue(queue, queue.indexOf(track))
     }
 
     // Single-expression bodies; "?." - call only if controller isn't null, otherwise do nothing

@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 // Scrollable list of tracks; highlights the playing one. Like NowPlayingBar, it only gets data and
@@ -25,9 +26,11 @@ fun TrackList(
     tracks: List<Track>,
     currentTrackId: Long?,
     isPlaying: Boolean,
-    // State is created in parent (TrackScreen) and passed down, so parent can scroll the list - state hoisting again
+    // State is created in AppScaffold and passed down, so it survives tab switches
     listState: LazyListState,
     onTrackClick: (Track) -> Unit,
+    // Empty space after the last item, so it can be scrolled out from under an overlay (e.g. NowPlayingBar)
+    bottomPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -35,7 +38,7 @@ fun TrackList(
         // contentPadding - empty space added after the last item (inside scrollable area, unlike Modifier.padding),
         // so last track can be scrolled out from under NowPlayingBar
         // 140.dp - bar grew with the slider and time labels; re-check on device if the bar changes again
-        contentPadding = PaddingValues(bottom = 140.dp),
+        contentPadding = PaddingValues(bottom = bottomPadding),
         modifier = modifier
     ) {
         items(tracks) { track ->
