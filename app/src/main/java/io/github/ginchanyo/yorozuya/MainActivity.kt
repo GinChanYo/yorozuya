@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -39,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import io.github.ginchanyo.yorozuya.ui.theme.YorozuyaTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -165,6 +167,23 @@ fun AppScaffold() {
             }
         }
     }
+    val playlistDao = remember { YorozuyaDatabase.get(context).playlistDao() }
+    val playlists by remember { playlistDao.observePlaylists() }.collectAsState(initial = emptyList())
+    var openedList by remember { mutableStateOf<PlaylistTarget?>(null) }
+
+    val openedTrackIds by remember(openedList) {
+        when (val target = openedList) {
+            PlaylistTarget.Favorites -> favoriteDao.observeIds()
+            is PlaylistTarget.Custom -> playlistDao.observeTrackIds(target.id)
+            null -> flowOf(emptyList())
+        }
+    }.collectAsState(initial = emptyList())
+
+    val tracksById = remember(allTracks) { allTracks.associateBy { it.id } }
+    val openedTracks = remember(tracksById, openedTrackIds) {
+        openedTrackIds.mapNotNull { tracksById[it] }
+    }
+    val detailListState = remember(openedList) { LazyListState() }
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         // Custom look instead of the default full-width Snackbar: a small pill sized to its text.
@@ -228,11 +247,37 @@ fun AppScaffold() {
                     showMessage = showMessage,
                     isFavorite = isCurrentFavorite,
                     onToggleFavorite = toggleFavorite)
-                Tab.PLAYLISTS -> FavoriteScreen(
-                    player = player,
-                    tracks = favoriteTracks,
-                    listState = favoriteListState,
-                )
+                Tab.PLAYLISTS -> when (val target = openedList) {
+                    null -> PlaylistsScreen(
+                        playlists = playlists,
+                        favoritesCount = favoriteIds.size,
+                        onOpen = { openedList = it },
+                        onCreate = { name ->
+                            scope.launch {
+                                val id = playlistDao.createPlaylist(PlaylistEntity(name = name))
+                                openedList = PlaylistTarget.Custom(id)
+                            }
+                        }
+                    )
+                    else -> PlaylistDetailScreen(
+                        title = when (target) {
+                            PlaylistTarget.Favorites -> "Favorites"
+                            is PlaylistTarget.Custom -> playlists.firstOrNull { it.id == target.id }?.name ?: ""
+                        },
+                        tracks = openedTracks,
+                        player = player,
+                        listState = detailListState,
+                        onBack = { openedList = null },
+                        onDelete = if (target is PlaylistTarget.Custom) {
+                            {
+                                scope.launch {
+                                    playlistDao.deletePlaylist(target.id)
+                                    openedList = null
+                                }
+                            }
+                        } else null
+                    )
+                }
                 Tab.STORAGE -> FoldersScreen(allTracks = allTracks, library = library)
                 Tab.DOWNLOADER -> Placeholder("Downloader")
             }

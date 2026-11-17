@@ -39,6 +39,9 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `@Annotation` | Metadata, e.g. `@Composable`, `@Stable`, `@OptIn`. |
 | `@param:Annotation` | Use-site target: apply to the constructor parameter (not the property/field) of a `val` in a constructor. |
 | `when (x) { A -> ...; else -> ... }` | Switch expression; returns a value. Exhaustive over enums → no `else`. |
+| `when (val t = x) { ... }` | Bind the subject to a name usable in the branches. |
+| `sealed interface X { data object A : X; data class B(val id: Long) : X }` | Closed set of variants (like a discriminated union): `when` is exhaustive without `else`. `data object` = singleton with a readable `toString`. |
+| `is B ->` / `if (x is B)` | Type check + smart cast: inside, `x.id` is available without a cast. |
 | `when { cond -> ... }` | `when` without subject = if/else-if chain. |
 | `if` as expression | `val c = if (a) x else y` (no ternary operator in Kotlin). |
 | `return@LaunchedEffect` | Labeled return: exit only the lambda, not the outer function. |
@@ -87,6 +90,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `coerceAtLeast(0L)` | Clamp to minimum. |
 | `"%d:%02d".format(a, b)` | printf-style formatting. |
 | `?.let { }` | Run block only if not null; value is `it`. |
+| `trim()`, `isNotBlank()` | Strip surrounding whitespace / has a non-space character. |
 | `takeIf { cond }` | The value if `cond` is true, otherwise `null`. With `?.`: `s?.takeIf { it != "x" }`. |
 | `run { }` | Run block with object as `this`. |
 | `use { }` | Run block and close resource after (`using`). |
@@ -104,6 +108,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Dispatchers.IO` | Thread pool for disk/network waiting. |
 | `suspend fun` | Function that can pause a coroutine; callable only from a coroutine (`async Task`). |
 | `Flow<T>` | Stream of values over time (`IAsyncEnumerable`/`IObservable`); Room emits a new value on every table change. |
+| `flowOf(x)` | `Flow` that emits one fixed value (e.g. `flowOf(emptyList())` as a "nothing" branch). |
 
 ## 4. Android platform
 
@@ -164,6 +169,9 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `LocalContext.current` | Current `Context` inside a composable. |
 | `rememberLauncherForActivityResult(contract) { result -> }` | Launcher for system dialogs (permission). `launcher.launch(...)`. |
 | `rememberLazyListState()` | Scroll state of a `LazyColumn`. |
+| `remember(key) { LazyListState() }` | New scroll state each time `key` changes (e.g. per opened playlist). |
+| Effect placement | Effects live as long as their composable. A tab screen leaves composition when switched away, so an effect that must always run belongs in a parent that's always composed. |
+| `BackHandler(onBack = ...)` | Intercept system back (gesture/button) while this composable is shown (`androidx.activity.compose`). |
 | State hoisting | State goes down as parameters, events go up as callbacks. |
 | `rememberXxx()` naming | Composable that creates and keeps an object; lowercase because it returns a value. |
 
@@ -177,7 +185,9 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Spacer(Modifier...)` | Empty gap. |
 | `LazyColumn(state, contentPadding) { items(list) { } }` | Scrollable list that only builds visible rows (RecyclerView). |
 | `items(list) { item -> }` | One row per list element inside `LazyColumn`. |
-| `LazyListState` | `layoutInfo.visibleItemsInfo` (index, size), `viewportStartOffset/EndOffset`, `animateScrollToItem(i, offset)`. |
+| `LazyListState` | `layoutInfo.visibleItemsInfo` (index, size), `viewportStartOffset/EndOffset`, `animateScrollToItem(i, offset)` (suspend, animated). |
+| `listState.requestScrollToItem(i, offset)` | Not suspend: "start from item `i` on next measure". Works while the list isn't shown, with no animation. |
+| `items(list, key = { it.id }) { }` | Stable key per row, so rows keep their state when the list changes. Needs `import androidx.compose.foundation.lazy.items`. |
 | `PaddingValues(bottom = 140.dp)` | Padding description (used for `contentPadding`, Scaffold `innerPadding`). |
 | `Alignment.Center`, `CenterVertically`, `CenterHorizontally`, `BottomCenter` | Alignment options. |
 | `Arrangement.SpaceBetween` | First at start, last at end, space between. |
@@ -232,6 +242,9 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `TextButton(onClick = { action }) { Text(...) }` | `onClick` runs once on tap; trailing `{ }` is what's drawn, runs on every recomposition - no actions there. |
 | `TextButton(onClick) { }` | Flat button with content. |
 | `IconButton(onClick) { Icon(...) }` | Round tappable area for an icon. |
+| `AlertDialog(onDismissRequest, title, text, confirmButton, dismissButton)` | Compose dialog (`androidx.compose.material3`, **not** `android.app.AlertDialog`). |
+| `OutlinedTextField(value, onValueChange, singleLine, placeholder)` | Text input with outline; `value` comes from state, `onValueChange = { name = it }`. |
+| `TextButton(onClick, enabled = cond)` | Disabled (grey, not tappable) when `enabled` is false. |
 | `Slider(value, onValueChange, onValueChangeFinished)` | Draggable 0..1 bar. |
 | `Checkbox(checked, onCheckedChange)` | Checkbox. |
 | `HorizontalDivider()` | Horizontal line. |
@@ -279,7 +292,13 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `@Dao interface` | Database access functions; Room generates the implementation. |
 | `@Query("SELECT ... WHERE id = :id")` | SQL for the function below it; `:id` = function parameter. Checked at build time. |
 | `@Insert(onConflict = OnConflictStrategy.IGNORE)` | Insert a row; IGNORE = skip if the key exists. |
-| `@Database(entities = [...], version = 1)` | Database class: `abstract class X : RoomDatabase()`, `abstract fun xDao()`. |
+| `@Insert suspend fun x(row): Long` | Returns the new row id. |
+| `@PrimaryKey(autoGenerate = true) val id: Long = 0` | Database assigns the id on insert; `0` is a placeholder. |
+| `@Entity(primaryKeys = ["a", "b"])` | Composite key: the pair must be unique. |
+| `ForeignKey(entity, parentColumns, childColumns, onDelete = ForeignKey.CASCADE)` | Link to another table; deleting the parent deletes child rows. |
+| `@Transaction` on a DAO function with a body | Several queries run as one atomic step. |
+| `COALESCE(a, b)` (SQL) | First non-null value: `COALESCE(MAX(position), -1) + 1` → 0 for an empty table. |
+| `@Database(entities = [...], version = 2, autoMigrations = [AutoMigration(from = 1, to = 2)])` | Database class: `abstract class X : RoomDatabase()`, `abstract fun xDao()`. Bump `version` on schema change; `AutoMigration` diffs the exported JSON schemas (both must exist). |
 | `Room.databaseBuilder<X>(context, name)` | Create the database; `.setDriver(BundledSQLiteDriver())`, `.setQueryCoroutineContext(Dispatchers.IO)`, `.build()`. |
 | `room3 { schemaDirectory(...) }` | Export table layout to JSON (commit it; used for migrations). |
 | Function returning `Flow<T>` | Observable query, not `suspend`. One-off reads/writes are `suspend`. |
@@ -304,9 +323,9 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `TrackLoader.kt` | `loadTracks(context): List<Track>` | Query MediaStore for music. |
 | `Tabs.kt` | `enum class Tab(label, icon)` | `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`; icon = `R.drawable.ic_*`. |
 | `MainActivity.kt` | `MainActivity` | Entry point; `setContent { YorozuyaTheme { AppScaffold() } }`. |
-| | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState`, `library`, filtered `tracks`, snackbar + `showMessage`, `favoriteIds`/`favoriteTracks`, `toggleFavorite`. |
-| `QueueScreen.kt` | `QueueScreen(player, tracks, currentTrack, hasPermission, listState, showMessage)` | Queue tab: buttons, (already filtered) list, mini player, auto-scroll. |
-| `FavoriteScreen.kt` | `FavoriteScreen(player, tracks, listState)` | Favorites list (temporarily on the Playlists tab). |
+| | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState` + auto-scroll effect, `library`, filtered `tracks`, snackbar + `showMessage`, `favoriteIds`, `toggleFavorite`, `playlists`, `openedList`, `openedTracks`. |
+| `QueueScreen.kt` | `QueueScreen(player, tracks, currentTrack, hasPermission, listState, showMessage)` | Queue tab: buttons, (already filtered) list, mini player. Auto-scroll lives in `AppScaffold`. |
+| `FavoriteScreen.kt` | `FavoriteScreen(player, tracks, listState)` | Old favorites list, no longer used (replaced by `PlaylistDetailScreen`). |
 | | `Placeholder(name)` | Stub screen for unfinished tabs. |
 | `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick, bottomPadding)` | Scrollable track list; `bottomPadding` = space under the last item. |
 | | `TrackRow(track, isCurrent, isPlaying, onClick)` | One row: cover + title/artist. |
@@ -334,5 +353,11 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | | `CallBack` | Session callback: allows and handles `stopCommand`. |
 | `FavoriteEntity.kt` | `FavoriteEntity(trackId, addedAt)` | Row of table `favorites`. |
 | `FavoriteDao.kt` | `observeIds()`, `observeIdsNewestFirst()`, `add(fav)`, `remove(id)` | Favorites queries. |
-| `YorozuyaDatabase.kt` | `YorozuyaDatabase.get(context)` | Singleton Room database `yorozuya.db`. |
+| `YorozuyaDatabase.kt` | `YorozuyaDatabase.get(context)` | Singleton Room database `yorozuya.db` (version 2). |
+| `PlaylistEntity.kt` | `PlaylistEntity(id, name, createdAt)` | Row of table `playlists`. |
+| `PlaylistTrackEntity.kt` | `PlaylistTrackEntity(playlistId, trackId, position)` | Row of table `playlist_tracks`; cascade-deleted with its playlist. |
+| `PlaylistDao.kt` | `observePlaylists()`, `createPlaylist()`, `deletePlaylist(id)`, `observeTrackIds(id)`, `addTrack()`, `removeTrack()` | Playlist queries. |
+| `PlaylistTarget.kt` | `sealed interface PlaylistTarget { Favorites, Custom(id) }` | Which list is opened on the Playlists tab. |
+| `PlaylistsScreen.kt` | `PlaylistsScreen(playlists, favoritesCount, onOpen, onCreate)` | Playlists tab: Favorites + playlists + "New Playlist" dialog. |
+| `PlaylistDetailScreen.kt` | `PlaylistDetailScreen(title, tracks, player, listState, onBack, onDelete?)` | Opened playlist: header with back/delete, track list, `BackHandler`. |
 | Prefs `library` | `paths` (string set), `subfolders` (bool) | Folder filter, read/written by `LibraryFilter`. |

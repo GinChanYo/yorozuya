@@ -830,3 +830,61 @@ This resolves most of the "Known issues" from the previous entry (all except the
 - Empty Favorites hint says "Song tab"; the tab is called "Now".
 - `toggleFavorite` decides add/remove by `favoriteIds`, which updates only after Room emits. Two very fast taps can both see the old value.
 - Stale comments: `PlayerConnection.kt:3` (wildcard import, now gone), `TrackList.kt:40` (140.dp now comes from the caller), `MainActivity.kt:127` (Scaffold comment is now above the favorites code), `MainActivity.kt:69` ("suspended" → the keyword is `suspend`).
+
+
+---
+
+## 2026-11-17 — Background auto-scroll, playlists
+
+### Changed: auto-scroll to the playing track now works from any tab
+- **Problem:** with shuffle on, after a track change on another tab, returning to Queue showed the list visibly scrolling to the new song. `when (currentTab)` keeps only the selected tab in composition, so the `LaunchedEffect` inside `QueueScreen` didn't exist on other tabs. It started only on return, and then ran `animateScrollToItem`.
+- **Fix:** the effect moved from `QueueScreen` to `AppScaffold`, which is always composed. `listState` already lived there, so it survives tab switches.
+  - Keys are still `(player.currentTrackId, tracks)`. `currentTab` is **not** a key (otherwise every tab switch would re-run the effect), it is only read inside. Because it is declared with `by remember { mutableStateOf(...) }`, the lambda captures the `State` object and always reads the current value.
+  - `if (index in visibleItemsInfo...) return@LaunchedEffect` - skip if the track is already on screen, so the list doesn't jump on every change.
+  - On Queue: `animateScrollToItem(index, offset)` (the user sees the list, so it scrolls smoothly).
+  - On other tabs: **`listState.requestScrollToItem(index, offset)`**. It's an ordinary (not `suspend`) function that only remembers "start from this item on the next measure". When `LazyColumn` appears again, it is drawn at that position right away, with no animation.
+  - `offset` uses the last `layoutInfo`. If Queue was never shown yet, heights are 0, so the track ends up at the top instead of the center.
+- `QueueScreen.kt`: the effect and the unused `LaunchedEffect` import were removed.
+
+### Added: playlists (Room database version 2)
+- **`PlaylistEntity.kt`:** table `playlists` (`id` with `@PrimaryKey(autoGenerate = true)`, so the database assigns the id and the default `0` is just a placeholder; `name`; `createdAt`).
+- **`PlaylistTrackEntity.kt`:** table `playlist_tracks`. Composite primary key `primaryKeys = ["playlistId", "trackId"]`, so one track can be in a playlist only once. `position` keeps the order.
+  - `ForeignKey(entity = PlaylistEntity::class, parentColumns = ["id"], childColumns = ["playlistId"], onDelete = CASCADE)`: deleting a playlist deletes its rows automatically.
+- **`PlaylistDao.kt`:**
+  - `observePlaylists()` and `observeTrackIds(playlistId)` return `Flow`.
+  - `createPlaylist(...)` returns `Long`, the new row id.
+  - `deletePlaylist(id)` and `removeTrack(playlistId, trackId)`.
+  - `nextPosition(...)` uses `SELECT COALESCE(MAX(position), -1) + 1`: `COALESCE` returns the first non-null value, so an empty playlist gets position 0.
+  - `addTrack(...)` is a function **with a body** in the DAO interface, marked `@Transaction`, so `nextPosition` + `insertTrack` run as one atomic step.
+- **`YorozuyaDatabase.kt`:** two new entities, `version = 2`, `autoMigrations = [AutoMigration(from = 1, to = 2)]`. Room compares `schemas/.../1.json` with `2.json` and generates the migration itself (new tables only, so no manual SQL is needed). `2.json` must be committed too.
+- **`PlaylistTarget.kt`:** `sealed interface PlaylistTarget { data object Favorites; data class Custom(val id: Long) }`. A closed set of variants, so `when` over it is exhaustive without `else`, and `is Custom` smart-casts to get `id`.
+- **`PlaylistsScreen.kt`:** a `LazyColumn` with a fixed "Favorites" row (track count), one row per playlist (`items(playlists, key = { it.id })`), and a "+ New Playlist" button. `CreatePlaylistDialog` is a Compose `AlertDialog` with an `OutlinedTextField`. "Create" is disabled while the name is blank, and the name is `trim()`ed.
+- **`PlaylistDetailScreen.kt`:** a header row (back button, title with ellipsis, delete button only when `onDelete != null`), "Nothing here yet" or a `TrackList`. `BackHandler(onBack)` makes the system back gesture close the playlist instead of the app. Delete asks for confirmation in an `AlertDialog`.
+- **`AppScaffold`:**
+  - `openedList: PlaylistTarget?`. `null` shows the list of playlists, otherwise the detail screen (`Tab.PLAYLISTS -> when (val target = openedList)`).
+  - `openedTrackIds` uses `remember(openedList)` to pick a `Flow`: `favoriteDao.observeIds()`, `playlistDao.observeTrackIds(id)`, or `flowOf(emptyList())` (a `Flow` with one fixed value) for `null`.
+  - `tracksById` (`associateBy`) is shared to turn ids into `Track`s.
+  - `detailListState = remember(openedList) { LazyListState() }`: a fresh scroll position for each opened playlist.
+  - Creating a playlist opens it right away (`createPlaylist` returns the id). Deleting it returns to the list.
+- New icons: `ic_arrow_back.xml`, `ic_delete.xml`.
+
+### Bugs fixed during development
+- **`PlaylistDetailScreen.kt` had no imports at all.** It produced dozens of "Unresolved reference" errors plus "@Composable invocations can only happen from..." as a side effect.
+- **`import android.app.AlertDialog` in `PlaylistsScreen.kt`:** that's the old View-system dialog. Compose needs `androidx.compose.material3.AlertDialog`. When the IDE offers several imports with the same name, in Compose files pick the one from `androidx.compose`.
+- **Missing `items` import:** `items(list) { }` is an extension on `LazyListScope`, so it needs its own import even though it's called inside `LazyColumn`.
+- **`{ playlists -> ... playlist.name }`:** the lambda parameter name didn't match the body.
+- **Missing comma after `onDismissRequest = onDismiss`:** it gave a cascade of "Syntax error" / "Call has no callee".
+- **Typo `deletePlaylisr` in the DAO** while `MainActivity` called `deletePlaylist`.
+- **Missing imports `flowOf` and `LazyListState` in `MainActivity.kt`.**
+- **While moving the auto-scroll effect:**
+  - The `{` of the `QueueScreen` body was deleted together with the effect.
+  - `LaunchedEffect` had no closing `}`.
+  - It was first placed above `val tracks`, but a local `val` can't be used before its declaration.
+  - The visibility check was first dropped (the list re-centered on every track change). Then it was kept as a separate `if` above the tab branch, which scrolled twice. Then it was turned into an early return with `!in` instead of `in`, which is inverted. **When rewriting `if (cond) { action }` as an early exit, negate the condition: `if (!cond) return`.**
+
+### Known issues / next steps
+- No UI to add a track to a playlist yet (`addTrack` / `removeTrack` are unused).
+- `FavoriteScreen.kt`, `favoriteTracks` and `favoriteListState` in `AppScaffold` are no longer used, since favorites open through `PlaylistDetailScreen`.
+- `PlaylistDetailScreen` shows no mini player and uses no `bottomPadding`.
+- The comment "Scaffold - Material screen skeleton..." in `AppScaffold` is still far above `Scaffold(`.
+- Formatting in `QueueScreen.kt`: `)` and `{` of the function body are on separate lines.
