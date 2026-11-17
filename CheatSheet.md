@@ -49,6 +49,10 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | Trailing lambda `f(a) { ... }` | Last lambda parameter goes outside `()`. |
 | Lambda with receiver | Inside `Row { }`, `this` is `RowScope` → `Modifier.weight` available. |
 | Function types `() -> Unit`, `(Float) -> Unit` | Like `Action`, `Action<float>`. A lambda can be stored in a `val` and passed down: `val showMessage: (String) -> Unit = { ... }`. |
+| Nullable function type `((Track) -> Unit)? = null` | Optional callback; check `!= null` before calling. |
+| `if (f != null) { { f(x) } } else null` | Outer `{ }` = `if` branch, inner `{ }` = lambda: wraps "call `f` with `x`" into `() -> Unit`. |
+| Expression body `fun f(): Boolean = a != b` | `=` instead of `{ }`: the expression is returned (C# `=>`). A `{ }` body needs `return`, otherwise it returns `Unit`. |
+| `"Removed \"${t.title}\""` | `\"` = quote inside a string, combined with a template. |
 | Function type with receiver `A.(String) -> Unit` | Function called *on* an `A` (inside it `this` is `A`), e.g. `RowScope.() -> Unit` of `Row { }`. |
 | `Unit` | "No value" type (`void`). |
 | `by` (delegation) | `var x by mutableStateOf(0)` — reads/writes go through the delegate's `getValue`/`setValue`. |
@@ -90,6 +94,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `coerceAtLeast(0L)` | Clamp to minimum. |
 | `"%d:%02d".format(a, b)` | printf-style formatting. |
 | `?.let { }` | Run block only if not null; value is `it`. |
+| `x?.let { v -> Composable(v) }` | Draw something only while `x` is not null (e.g. a dialog for `actionTrack`). |
 | `trim()`, `isNotBlank()` | Strip surrounding whitespace / has a non-space character. |
 | `takeIf { cond }` | The value if `cond` is true, otherwise `null`. With `?.`: `s?.takeIf { it != "x" }`. |
 | `run { }` | Run block with object as `this`. |
@@ -159,6 +164,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `remember(key1, key2) { }` | Recompute when a key changes. |
 | `mutableStateOf(x)` | Observable value; writing it triggers redraw of readers. |
 | `var x by remember { mutableStateOf(...) }` | Standard pattern for local UI state. |
+| `mutableStateOf<Track?>(null)` | Explicit type when the initial value is `null` (otherwise the type would be `Nothing?`). |
 | `getValue` / `setValue` imports | Needed for `by` with state. |
 | `@Stable` | Promise to Compose that changes are reported through state. |
 | `LaunchedEffect(keys) { }` | Run a coroutine when entering composition / when keys change; cancelled on leave. `Unit` key = once. |
@@ -173,6 +179,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | Effect placement | Effects live as long as their composable. A tab screen leaves composition when switched away, so an effect that must always run belongs in a parent that's always composed. |
 | `BackHandler(onBack = ...)` | Intercept system back (gesture/button) while this composable is shown (`androidx.activity.compose`). |
 | State hoisting | State goes down as parameters, events go up as callbacks. |
+| Parameter order convention | Required parameters → `modifier: Modifier = Modifier` → optional parameters. |
 | `rememberXxx()` naming | Composable that creates and keeps an object; lowercase because it returns a value. |
 
 ## 6. Compose layout
@@ -206,6 +213,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `weight(1f)` | Share leftover space in `Row`/`Column` (only in `RowScope`/`ColumnScope`). |
 | `align(...)` | Position a child inside `Box` (only in `BoxScope`). |
 | `clickable(onClick = ...)` | Make tappable. |
+| `combinedClickable(onClick, onLongClick)` | Tap + long press in one modifier; `onLongClick = null` = no long press. |
 | `background(color)` | Fill background. |
 | `clip(shape)` | Cut content to a shape. |
 | `RoundedCornerShape(4.dp)` | Rounded rectangle shape. |
@@ -293,6 +301,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `@Query("SELECT ... WHERE id = :id")` | SQL for the function below it; `:id` = function parameter. Checked at build time. |
 | `@Insert(onConflict = OnConflictStrategy.IGNORE)` | Insert a row; IGNORE = skip if the key exists. |
 | `@Insert suspend fun x(row): Long` | Returns the new row id. |
+| `@Insert(onConflict = IGNORE)` returning `Long` | `-1` if the row was skipped because the key exists. |
 | `@PrimaryKey(autoGenerate = true) val id: Long = 0` | Database assigns the id on insert; `0` is a placeholder. |
 | `@Entity(primaryKeys = ["a", "b"])` | Composite key: the pair must be unique. |
 | `ForeignKey(entity, parentColumns, childColumns, onDelete = ForeignKey.CASCADE)` | Link to another table; deleting the parent deletes child rows. |
@@ -323,12 +332,12 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `TrackLoader.kt` | `loadTracks(context): List<Track>` | Query MediaStore for music. |
 | `Tabs.kt` | `enum class Tab(label, icon)` | `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`; icon = `R.drawable.ic_*`. |
 | `MainActivity.kt` | `MainActivity` | Entry point; `setContent { YorozuyaTheme { AppScaffold() } }`. |
-| | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState` + auto-scroll effect, `library`, filtered `tracks`, snackbar + `showMessage`, `favoriteIds`, `toggleFavorite`, `playlists`, `openedList`, `openedTracks`. |
-| `QueueScreen.kt` | `QueueScreen(player, tracks, currentTrack, hasPermission, listState, showMessage)` | Queue tab: buttons, (already filtered) list, mini player. Auto-scroll lives in `AppScaffold`. |
+| | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState` + auto-scroll effect, `library`, filtered `tracks`, snackbar + `showMessage`, `favoriteIds`, `toggleFavorite(id)`, `actionTrack` + `TrackActionsDialog`, `playlists`, `openedList`, `openedTracks`. |
+| `QueueScreen.kt` | `QueueScreen(player, tracks, currentTrack, hasPermission, listState, showMessage, onTrackLongClick)` | Queue tab: buttons, (already filtered) list, mini player. Auto-scroll lives in `AppScaffold`. |
 | `FavoriteScreen.kt` | `FavoriteScreen(player, tracks, listState)` | Old favorites list, no longer used (replaced by `PlaylistDetailScreen`). |
 | | `Placeholder(name)` | Stub screen for unfinished tabs. |
-| `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick, bottomPadding)` | Scrollable track list; `bottomPadding` = space under the last item. |
-| | `TrackRow(track, isCurrent, isPlaying, onClick)` | One row: cover + title/artist. |
+| `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick, onTrackLongClick?, bottomPadding)` | Scrollable track list; `bottomPadding` = space under the last item. |
+| | `TrackRow(track, isCurrent, isPlaying, onClick, onLongClick?)` | One row: cover + title/artist; tap + long press. |
 | `NowPlayingBar.kt` | `NowPlayingBar(track, isPlaying, on...Click, player)` | Mini player: seek bar, cover, title, prev/play/next. |
 | | `formatTime(ms)` | `83500` → `"1:23"`. |
 | `SeekBar.kt` | `PlayerSeekBar(player, modifier)` | Slider + time labels with own drag state; used by mini player and "Now" tab. |
@@ -356,8 +365,9 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `YorozuyaDatabase.kt` | `YorozuyaDatabase.get(context)` | Singleton Room database `yorozuya.db` (version 2). |
 | `PlaylistEntity.kt` | `PlaylistEntity(id, name, createdAt)` | Row of table `playlists`. |
 | `PlaylistTrackEntity.kt` | `PlaylistTrackEntity(playlistId, trackId, position)` | Row of table `playlist_tracks`; cascade-deleted with its playlist. |
-| `PlaylistDao.kt` | `observePlaylists()`, `createPlaylist()`, `deletePlaylist(id)`, `observeTrackIds(id)`, `addTrack()`, `removeTrack()` | Playlist queries. |
+| `PlaylistDao.kt` | `observePlaylists()`, `createPlaylist()`, `deletePlaylist(id)`, `observeTrackIds(id)`, `addTrack(): Boolean`, `removeTrack()` | Playlist queries. |
 | `PlaylistTarget.kt` | `sealed interface PlaylistTarget { Favorites, Custom(id) }` | Which list is opened on the Playlists tab. |
 | `PlaylistsScreen.kt` | `PlaylistsScreen(playlists, favoritesCount, onOpen, onCreate)` | Playlists tab: Favorites + playlists + "New Playlist" dialog. |
-| `PlaylistDetailScreen.kt` | `PlaylistDetailScreen(title, tracks, player, listState, onBack, onDelete?)` | Opened playlist: header with back/delete, track list, `BackHandler`. |
+| `PlaylistDetailScreen.kt` | `PlaylistDetailScreen(title, tracks, player, listState, onBack, onDelete?, onRemoveTrack)` | Opened playlist: header with back/delete, track list, `BackHandler`, long press → remove dialog. |
+| `TrackActionsDialog.kt` | `TrackActionsDialog(track, isFavorite, playlists, onToggleFavorite, onAddTo, onDismiss)` | Long-press menu: favorite toggle + "Add to <playlist>". |
 | Prefs `library` | `paths` (string set), `subfolders` (bool) | Folder filter, read/written by `LibraryFilter`. |

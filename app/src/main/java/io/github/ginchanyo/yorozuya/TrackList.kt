@@ -1,6 +1,6 @@
 package io.github.ginchanyo.yorozuya
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -29,6 +29,7 @@ fun TrackList(
     // State is created in AppScaffold and passed down, so it survives tab switches
     listState: LazyListState,
     onTrackClick: (Track) -> Unit,
+    onTrackLongClick: ((Track) -> Unit)? = null,
     // Empty space after the last item, so it can be scrolled out from under an overlay (e.g. NowPlayingBar)
     bottomPadding: Dp = 0.dp,
     modifier: Modifier = Modifier
@@ -46,7 +47,9 @@ fun TrackList(
                 track = track,
                 isCurrent = track.id == currentTrackId,
                 isPlaying = isPlaying,
-                onClick = { onTrackClick(track) })
+                onClick = { onTrackClick(track) },
+                onLongClick = if (onTrackLongClick != null) { { onTrackLongClick(track) } } else null,
+            )
         }
     }
 }
@@ -56,7 +59,8 @@ fun TrackRow(
     track: Track,
     isCurrent: Boolean,
     isPlaying: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
 ) {
     val titleColor = if (isCurrent) {
         MaterialTheme.colorScheme.primary
@@ -66,7 +70,7 @@ fun TrackRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ){

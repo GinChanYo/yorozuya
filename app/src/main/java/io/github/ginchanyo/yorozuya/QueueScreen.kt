@@ -30,9 +30,9 @@ fun QueueScreen(
     listState: LazyListState,
     // Shows a short bubble at the bottom (Snackbar in AppScaffold) - called from onClick, never from drawing code
     showMessage: (String) -> Unit,
+    onTrackLongClick: (Track) -> Unit,
     modifier: Modifier = Modifier
-)
-{
+) {
     // Box - layout that stacks children on top of each other (later child is drawn above earlier one),
     // unlike Column/Row that place them one after another. Here: track list below, NowPlayingBar above it.
     // fillMaxSize - Box takes the whole screen, so its bottom edge is the screen bottom
@@ -72,8 +72,8 @@ fun QueueScreen(
                 listState = listState,
                 bottomPadding = 140.dp,
                 // Tap on the playing track - pause/resume; on another one - play current (filtered) list starting from it
-                onTrackClick = { player.playOrToggle(it, tracks)
-                }
+                onTrackClick = { player.playOrToggle(it, tracks) },
+                onTrackLongClick = onTrackLongClick
             )
         }
         // Bar is shown only when something is selected; Compose simply doesn't draw it when condition is false

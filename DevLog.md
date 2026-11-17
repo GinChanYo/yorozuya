@@ -883,8 +883,57 @@ This resolves most of the "Known issues" from the previous entry (all except the
   - The visibility check was first dropped (the list re-centered on every track change). Then it was kept as a separate `if` above the tab branch, which scrolled twice. Then it was turned into an early return with `!in` instead of `in`, which is inverted. **When rewriting `if (cond) { action }` as an early exit, negate the condition: `if (!cond) return`.**
 
 ### Known issues / next steps
-- No UI to add a track to a playlist yet (`addTrack` / `removeTrack` are unused).
+- ~~No UI to add a track to a playlist yet (`addTrack` / `removeTrack` are unused).~~ Done in the next entry.
 - `FavoriteScreen.kt`, `favoriteTracks` and `favoriteListState` in `AppScaffold` are no longer used, since favorites open through `PlaylistDetailScreen`.
 - `PlaylistDetailScreen` shows no mini player and uses no `bottomPadding`.
 - The comment "Scaffold - Material screen skeleton..." in `AppScaffold` is still far above `Scaffold(`.
 - Formatting in `QueueScreen.kt`: `)` and `{` of the function body are on separate lines.
+
+---
+
+## 2026-11-17 (2) — Track actions: long press, add to / remove from playlists
+
+### Added: long press on a track
+- **`TrackList.kt`:** `TrackRow` uses `Modifier.combinedClickable(onClick, onLongClick)` instead of `clickable`. That's one modifier for tap + long press; `onLongClick = null` means no long press.
+  - `TrackList` got `onTrackLongClick: ((Track) -> Unit)? = null`, a **nullable function type** with a default, so screens that don't need it pass nothing.
+  - It's passed to the row as `if (onTrackLongClick != null) { { onTrackLongClick(track) } } else null`. The outer `{ }` is the `if` branch, the inner `{ }` is the lambda. This wraps "call with this track" into a `() -> Unit`.
+- **`QueueScreen`:** `onTrackLongClick: (Track) -> Unit` is passed down to `TrackList`.
+
+### Added: `TrackActionsDialog.kt`
+- `AlertDialog` with the track title (2 lines, ellipsis) and a `LazyColumn` of actions:
+  - "Add to favorites" / "Remove from favorites", depending on `isFavorite`;
+  - a `HorizontalDivider`, only if there are playlists;
+  - one "Add to <name>" row per playlist (`items(playlists, key = { it.id })`).
+- `ActionRow(text, onClick)` is a private composable: a full-width clickable `Text`.
+- The dialog knows nothing about the database. It gets data and callbacks (`onToggleFavorite`, `onAddTo(playlist)`, `onDismiss`).
+- **`AppScaffold`:**
+  - `var actionTrack by remember { mutableStateOf<Track?>(null) }`. A non-null value means the dialog is open for that track.
+  - `actionTrack?.let { track -> TrackActionsDialog(...) }` is drawn after the `when (currentTab)` inside the `Box`, so it doesn't depend on which tab opened it.
+  - `onAddTo` closes the dialog, then calls `playlistDao.addTrack(...)` in `scope.launch` and shows "Added to X" or "Already in X".
+
+### Changed: `toggleFavorite` takes the track id
+- Was `() -> Unit` and always used `currentTrack`. Now it is `(Long) -> Unit` (`{ id -> ... }`), so the same code works for the playing track and for any long-pressed track.
+- Now tab: `onToggleFavorite = { currentTrack?.let { toggleFavorite(it.id) } }`.
+
+### Added: remove a track from a playlist
+- **`PlaylistDetailScreen`:** `onRemoveTrack: (Track) -> Unit`. A long press sets `trackToRemove`, and an `AlertDialog` asks "Remove from "<title>"?" before calling it.
+- **`AppScaffold`:** `when (target)` picks `favoriteDao.remove(id)` or `playlistDao.removeTrack(playlistId, id)`, then shows `Removed "<title>"`.
+
+### Changed: `PlaylistDao.addTrack` returns `Boolean`
+- `insertTrack` now returns `Long`. `@Insert` with `IGNORE` returns `-1` when the row already exists, because the key `(playlistId, trackId)` is taken.
+- `suspend fun addTrack(...): Boolean = insertTrack(...) != -1L` uses an **expression body**: `=` instead of `{ }`, and the value of the expression is returned (like `=>` in C#).
+
+### Bugs fixed during development
+- **Missing comma after `} else null` before `onRemoveTrack = ...`:** one missing comma gave "No value passed for parameter", "Expecting an element", "Unresolved reference 'id'" on the next lines.
+- **`addTrack` with `{ insertTrack(...) != -1L }`:** a block body without `return` throws the result away and returns `Unit` → "inferred type is 'Unit' but 'Boolean' was expected" at the call site.
+- **Parameter `padding: Modifier.Companion.(Any) -> Modifier` in `TrackActionsDialog`:** created by the IDE quick-fix "Create parameter" while the `padding` import was missing. It's the same trap as `showSnackBar` and `align` before.
+- **Missing `import androidx.compose.foundation.lazy.items`:** without it `items(playlists)` matched `items(count: Int)` → "actual type is 'List<PlaylistEntity>', but 'Int' was expected".
+- **`QueueScreen` accepted `onTrackLongClick` but didn't pass it to `TrackList`:** no compile error, because `TrackList`'s parameter defaults to `null`. Long press on Queue silently did nothing.
+- **Parameter order:** required `onTrackLongClick` / `onRemoveTrack` were placed after `modifier: Modifier = Modifier`. The Compose convention is required parameters → `modifier` → optional parameters.
+- Message text `"Remove"` → `Removed "<title>"`.
+
+### Known issues / next steps
+- No way to reorder tracks inside a playlist (`position` is only appended).
+- After removing a track from Favorites in the detail screen, the Now tab heart updates (same `Flow`), but no undo.
+- `FavoriteScreen.kt`, `favoriteTracks` and `favoriteListState` are still unused.
+- `TrackActionsDialog` is only reachable from Queue (the detail screen uses long press for "Remove").

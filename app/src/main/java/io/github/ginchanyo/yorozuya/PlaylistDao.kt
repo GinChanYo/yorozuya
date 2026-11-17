@@ -25,12 +25,13 @@ interface PlaylistDao {
     suspend fun nextPosition(playlistId: Long): Int
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertTrack(row: PlaylistTrackEntity)
+    suspend fun insertTrack(row: PlaylistTrackEntity): Long
 
     @Transaction
-    suspend fun addTrack(playlistId: Long, trackId: Long){
-        insertTrack(PlaylistTrackEntity(playlistId, trackId, nextPosition(playlistId)))
-    }
+    // Expression body (= instead of { }): the value of the expression is returned.
+    // @Insert with IGNORE returns -1 when the row already exists, so false = track was already in the playlist
+    suspend fun addTrack(playlistId: Long, trackId: Long): Boolean =
+        insertTrack(PlaylistTrackEntity(playlistId, trackId, nextPosition(playlistId))) != -1L
 
     @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId and trackId = :trackId")
     suspend fun removeTrack(playlistId: Long, trackId: Long)

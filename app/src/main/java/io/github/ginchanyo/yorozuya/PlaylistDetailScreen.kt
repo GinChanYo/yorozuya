@@ -33,11 +33,12 @@ fun PlaylistDetailScreen(
     listState: LazyListState,
     onBack: () -> Unit,
     onDelete: (() -> Unit)?,
+    onRemoveTrack: (Track) -> Unit,
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onBack)
     var confirmDelete by remember { mutableStateOf(false) }
-
+    var trackToRemove by remember { mutableStateOf<Track?>(null) }
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -76,6 +77,7 @@ fun PlaylistDetailScreen(
                 isPlaying = player.isPlaying,
                 listState = listState,
                 onTrackClick = { player.playOrToggle(it, tracks) },
+                onTrackLongClick = {trackToRemove = it},
                 modifier = Modifier.weight(1f).fillMaxWidth()
             )
         }
@@ -96,5 +98,21 @@ fun PlaylistDetailScreen(
                 TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
             }
         )
+    }
+    trackToRemove?.let{ track ->
+        AlertDialog(
+            onDismissRequest = {trackToRemove = null},
+            title = { Text("Remove from \"$title\"?") },
+            text = { Text(track.title)},
+            confirmButton = {
+                TextButton(onClick = {
+                    trackToRemove = null
+                    onRemoveTrack(track)
+                }) {Text("Remove")}
+            },
+            dismissButton = {
+                TextButton(onClick = {trackToRemove = null }) {Text("Cancel")}
+            }
+            )
     }
 }

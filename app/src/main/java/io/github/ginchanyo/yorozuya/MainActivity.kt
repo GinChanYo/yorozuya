@@ -124,6 +124,7 @@ fun AppScaffold() {
     val tracks = remember(allTracks, library.selectedPaths, library.includeSubfolders){
         library.filter(allTracks)
     }
+    var actionTrack by remember {mutableStateOf<Track?>(null)}
     // Searched in allTracks, not filtered tracks: the playing song must show even if it's outside selected folders
     val currentTrack = allTracks.firstOrNull { it.id == player.currentTrackId }
     // Scroll list to the playing track. Two keys: re-run when track changes AND when tracks are loaded
@@ -143,27 +144,18 @@ fun AppScaffold() {
         if (currentTab == Tab.QUEUE) listState.animateScrollToItem(index, offset)
         else listState.requestScrollToItem(index, offset)
     }
-    // Scaffold - Material screen skeleton with slots (topBar, bottomBar...); innerPadding is the space
-    // the bars take, so content isn't drawn under them
     val favoriteDao = remember { YorozuyaDatabase.get(context).favoriteDao() }
     val favoriteIds by remember { favoriteDao.observeIds()}.collectAsState(initial = emptyList())
-    val favoriteTracks = remember(allTracks, favoriteIds){
-        val byId = allTracks.associateBy { it.id }
-        favoriteIds.mapNotNull { byId[it] }
-    }
-    val favoriteListState = rememberLazyListState()
+
     val isCurrentFavorite = currentTrack != null && currentTrack.id in favoriteIds
-    val toggleFavorite: () -> Unit = {
-        val id = currentTrack?.id
-        if (id != null){
-            scope.launch(){
-                if (id in favoriteIds){
-                    favoriteDao.remove(id)
-                    showMessage("Removed from favorites")
-                } else {
-                    favoriteDao.add(FavoriteEntity(trackId = id))
-                    showMessage("Added to favorites")
-                }
+    val toggleFavorite: (Long) -> Unit = { id ->
+        scope.launch {
+            if (id in favoriteIds) {
+                favoriteDao.remove(id)
+                showMessage("Removed from favorites")
+            } else {
+                favoriteDao.add(FavoriteEntity(trackId = id))
+                showMessage("Added to favorites")
             }
         }
     }
@@ -184,6 +176,8 @@ fun AppScaffold() {
         openedTrackIds.mapNotNull { tracksById[it] }
     }
     val detailListState = remember(openedList) { LazyListState() }
+    // Scaffold - Material screen skeleton with slots (topBar, bottomBar...); innerPadding is the space
+    // the bars take, so content isn't drawn under them
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         // Custom look instead of the default full-width Snackbar: a small pill sized to its text.
@@ -239,14 +233,16 @@ fun AppScaffold() {
                     currentTrack = currentTrack,
                     hasPermission = hasPermission,
                     listState = listState,
-                    showMessage = showMessage
+                    showMessage = showMessage,
+                    onTrackLongClick = { actionTrack = it}
                 )
                 Tab.NOW_PLAYING -> NowPlayingScreen(
                     player = player,
                     track = currentTrack,
                     showMessage = showMessage,
                     isFavorite = isCurrentFavorite,
-                    onToggleFavorite = toggleFavorite)
+                    onToggleFavorite = {currentTrack?.let {toggleFavorite(it.id)}}
+                )
                 Tab.PLAYLISTS -> when (val target = openedList) {
                     null -> PlaylistsScreen(
                         playlists = playlists,
@@ -275,11 +271,39 @@ fun AppScaffold() {
                                     openedList = null
                                 }
                             }
-                        } else null
+                        } else null,
+                        onRemoveTrack = {track ->
+                            scope.launch{
+                                when (target){
+                                    PlaylistTarget.Favorites -> favoriteDao.remove(track.id)
+                                    is PlaylistTarget.Custom -> playlistDao.removeTrack(target.id, track.id)
+                                }
+                                showMessage("Removed \"${track.title}\"")
+                            }
+                        }
                     )
                 }
                 Tab.STORAGE -> FoldersScreen(allTracks = allTracks, library = library)
                 Tab.DOWNLOADER -> Placeholder("Downloader")
+            }
+            actionTrack?.let { track ->
+                TrackActionsDialog(
+                    track = track,
+                    isFavorite = track.id in favoriteIds,
+                    playlists = playlists,
+                    onToggleFavorite = {
+                        toggleFavorite(track.id)
+                        actionTrack = null
+                    },
+                    onAddTo = { playlist ->
+                        actionTrack = null
+                        scope.launch {
+                            val added = playlistDao.addTrack(playlist.id, track.id)
+                            showMessage(if (added) "Added to ${playlist.name}" else "Already in ${playlist.name}")
+                        }
+                    },
+                    onDismiss = { actionTrack = null }
+                )
             }
         }
     }
