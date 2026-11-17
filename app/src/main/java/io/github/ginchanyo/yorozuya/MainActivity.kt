@@ -124,9 +124,25 @@ fun AppScaffold() {
     }
     // Searched in allTracks, not filtered tracks: the playing song must show even if it's outside selected folders
     val currentTrack = allTracks.firstOrNull { it.id == player.currentTrackId }
+    // Scroll list to the playing track. Two keys: re-run when track changes AND when tracks are loaded
+    // (on app return currentTrackId may arrive before the list, then index would be -1 and nothing would scroll).
+    // listState.requestScrollToItem() is ordinary not suspend function. It only remembers "on next measure start from this element"
+    // When LazyColumn will appear again, it will draw on its position without animation.
+    // Lives here, not in QueueScreen: QueueScreen isn't composed on other tabs, so its effect would miss track changes
+    LaunchedEffect(player.currentTrackId, tracks) {
+        val index = tracks.indexOfFirst { it.id == player.currentTrackId }
+        if (index < 0) return@LaunchedEffect
+        val info = listState.layoutInfo
+        val viewportHeight = info.viewportEndOffset - info.viewportStartOffset
+        val itemHeight = info.visibleItemsInfo.firstOrNull()?.size ?: 0
+        val offset = -(viewportHeight / 2 - itemHeight / 2)
+
+        if (index in info.visibleItemsInfo.map {it.index})  return@LaunchedEffect
+        if (currentTab == Tab.QUEUE) listState.animateScrollToItem(index, offset)
+        else listState.requestScrollToItem(index, offset)
+    }
     // Scaffold - Material screen skeleton with slots (topBar, bottomBar...); innerPadding is the space
     // the bars take, so content isn't drawn under them
-
     val favoriteDao = remember { YorozuyaDatabase.get(context).favoriteDao() }
     val favoriteIds by remember { favoriteDao.observeIds()}.collectAsState(initial = emptyList())
     val favoriteTracks = remember(allTracks, favoriteIds){

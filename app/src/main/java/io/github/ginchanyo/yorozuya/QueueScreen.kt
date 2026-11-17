@@ -10,7 +10,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -32,23 +31,8 @@ fun QueueScreen(
     // Shows a short bubble at the bottom (Snackbar in AppScaffold) - called from onClick, never from drawing code
     showMessage: (String) -> Unit,
     modifier: Modifier = Modifier
-) {
-    // Scroll list to the playing track. Two keys: re-run when track changes AND when tracks are loaded
-    // (on app return currentTrackId may arrive before the list, then index would be -1 and nothing would scroll).
-    // LaunchedEffect body is a coroutine, that's why suspend function scrollToItem can be called here
-    LaunchedEffect(player.currentTrackId, tracks) {
-        val index = tracks.indexOfFirst { it.id == player.currentTrackId }
-        if (index < 0) return@LaunchedEffect
-
-        val info = listState.layoutInfo
-        val viewportHeight = info.viewportEndOffset - info.viewportStartOffset
-        val itemHeight = info.visibleItemsInfo.firstOrNull()?.size ?: 0
-        val offset = -(viewportHeight / 2 - itemHeight / 2)
-
-        if (index !in info.visibleItemsInfo.map {it.index}){
-            listState.animateScrollToItem(index, offset)
-        }
-    }
+)
+{
     // Box - layout that stacks children on top of each other (later child is drawn above earlier one),
     // unlike Column/Row that place them one after another. Here: track list below, NowPlayingBar above it.
     // fillMaxSize - Box takes the whole screen, so its bottom edge is the screen bottom
@@ -63,7 +47,7 @@ fun QueueScreen(
                 TextButton(onClick = {
                     player.toggleShuffle()
                     showMessage(if (player.shuffleEnabled) "Shuffle: on" else "Shuffle: off")
-                }){
+                }) {
                     Text(if (player.shuffleEnabled) "Shuffle: on" else "Shuffle: off")
                 }
                 TextButton(onClick = {
