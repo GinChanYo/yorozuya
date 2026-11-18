@@ -10,3 +10,5 @@
 8. For lyrics there should be option to either create .lrc file, or embed them to the song directly in the app. For lyrics there will be dedicated directory. 
 9. Add customizable navigation bar
 10. Implement offline/online lyrics translation and save it locally if needed
+11. Implement Achievement system
+12. Add backup system for playlist, that can be restored. For example when data transfer was done from phone to phone and this backup restores the playlists, and song order
