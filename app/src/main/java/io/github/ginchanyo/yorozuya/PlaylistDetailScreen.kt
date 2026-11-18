@@ -34,11 +34,13 @@ fun PlaylistDetailScreen(
     onBack: () -> Unit,
     onDelete: (() -> Unit)?,
     onRemoveTrack: (Track) -> Unit,
+    onRename: ((String) -> Unit)?,
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onBack)
     var confirmDelete by remember { mutableStateOf(false) }
     var trackToRemove by remember { mutableStateOf<Track?>(null) }
+    var showRename by remember {mutableStateOf(false)}
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -56,11 +58,17 @@ fun PlaylistDetailScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
+            if (onRename != null) {
+                IconButton(onClick = {showRename = true}){
+                    Icon(painterResource(R.drawable.ic_edit), contentDescription = "Rename playlist")
+                }
+            }
             if (onDelete != null) {
                 IconButton(onClick = { confirmDelete = true }) {
                     Icon(painterResource(R.drawable.ic_delete), contentDescription = "Delete playlist")
                 }
             }
+
         }
 
         if (tracks.isEmpty()) {
@@ -82,7 +90,6 @@ fun PlaylistDetailScreen(
             )
         }
     }
-
     if (confirmDelete && onDelete != null) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
@@ -115,4 +122,17 @@ fun PlaylistDetailScreen(
             }
             )
     }
+    if (showRename && onRename != null){
+        PlaylistNameDialog(
+            title = "Rename playlist",
+            confirmLabel = "Rename",
+            initialName = title,
+            onConfirm = {
+                showRename = false
+                onRename(it)
+            },
+            onDismiss = { showRename = false }
+        )
+    }
+
 }

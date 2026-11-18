@@ -35,4 +35,12 @@ interface PlaylistDao {
 
     @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId and trackId = :trackId")
     suspend fun removeTrack(playlistId: Long, trackId: Long)
+
+    @Query("SELECT playlistId, COUNT(*) AS count FROM playlist_tracks GROUP BY playlistId")
+    fun observeCounts(): Flow<List<PlaylistCount>>
+
+    @Query("UPDATE playlists SET name = :name WHERE id = :playlistId")
+    suspend fun rename(playlistId: Long, name: String)
 }
+
+data class PlaylistCount(val playlistId: Long, val count: Int)

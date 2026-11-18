@@ -26,6 +26,7 @@ fun PlaylistsScreen(
     favoritesCount: Int,
     onOpen: (PlaylistTarget) -> Unit,
     onCreate: (String) -> Unit,
+    counts: Map<Long, Int>,
     modifier: Modifier = Modifier
 ){
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -39,9 +40,10 @@ fun PlaylistsScreen(
             )
         }
         items(playlists, key = { it.id }) { playlist ->
+            val count = counts[playlist.id] ?: 0
             PlaylistRow(
                 name = playlist.name,
-                subtitle = null,
+                subtitle = "$count ${if(count == 1)"track" else "tracks"}",
                 onClick = { onOpen(PlaylistTarget.Custom(playlist.id))}
             )
         }
@@ -53,7 +55,9 @@ fun PlaylistsScreen(
         }
     }
     if (showCreateDialog){
-        CreatePlaylistDialog(
+        PlaylistNameDialog(
+            title = "New playlist",
+            confirmLabel = "Create",
             onConfirm = { name ->
                 showCreateDialog = false
                 onCreate(name)
@@ -79,11 +83,17 @@ private fun PlaylistRow(name: String, subtitle: String?, onClick: () -> Unit){
 }
 
 @Composable
-private fun CreatePlaylistDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit){
-    var name by remember {mutableStateOf("")}
+fun PlaylistNameDialog(
+    title: String,
+    confirmLabel: String,
+    initialName: String = "",
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember {mutableStateOf(initialName)}
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {Text("New Playlist")},
+        title = {Text(title)},
         text = {OutlinedTextField(
             value = name,
             onValueChange = { name = it},
@@ -94,7 +104,7 @@ private fun CreatePlaylistDialog(onConfirm: (String) -> Unit, onDismiss: () -> U
             TextButton(
                 onClick = { onConfirm(name.trim())},
                 enabled = name.isNotBlank()
-            ) {Text("Create")}
+            ) {Text(confirmLabel)}
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {Text("Cancel")}

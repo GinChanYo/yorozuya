@@ -161,6 +161,11 @@ fun AppScaffold() {
     }
     val playlistDao = remember { YorozuyaDatabase.get(context).playlistDao() }
     val playlists by remember { playlistDao.observePlaylists() }.collectAsState(initial = emptyList())
+    val playlistCounts by remember { playlistDao.observeCounts() }
+        .collectAsState(initial = emptyList())
+    val countsById = remember(playlistCounts){
+        playlistCounts.associate { it.playlistId to it.count}
+    }
     var openedList by remember { mutableStateOf<PlaylistTarget?>(null) }
 
     val openedTrackIds by remember(openedList) {
@@ -247,6 +252,7 @@ fun AppScaffold() {
                     null -> PlaylistsScreen(
                         playlists = playlists,
                         favoritesCount = favoriteIds.size,
+                        counts = countsById,
                         onOpen = { openedList = it },
                         onCreate = { name ->
                             scope.launch {
@@ -280,7 +286,10 @@ fun AppScaffold() {
                                 }
                                 showMessage("Removed \"${track.title}\"")
                             }
-                        }
+                        },
+                        onRename = if (target is PlaylistTarget.Custom){
+                            { newName -> scope.launch {playlistDao.rename(target.id, newName)}}
+                        }else null,
                     )
                 }
                 Tab.STORAGE -> FoldersScreen(allTracks = allTracks, library = library)
