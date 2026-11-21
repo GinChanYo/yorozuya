@@ -38,7 +38,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import io.github.ginchanyo.yorozuya.ui.theme.ThemeSettings
+import io.github.ginchanyo.yorozuya.ui.theme.ThemePickerScreen
 import io.github.ginchanyo.yorozuya.ui.theme.YorozuyaTheme
+import io.github.ginchanyo.yorozuya.ui.theme.rememberThemeSettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -48,8 +51,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            YorozuyaTheme {
-                AppScaffold()
+            val themeSettings = rememberThemeSettings()
+            YorozuyaTheme(
+                theme = themeSettings.theme,
+                mode = themeSettings.mode,
+                amoled = themeSettings.amoled
+            ) {
+                AppScaffold(themeSettings = themeSettings)
             }
         }
     }
@@ -60,7 +68,7 @@ class MainActivity : ComponentActivity() {
 // "state goes down, events go up". Tab screens leave composition when switched away, so anything kept
 // only inside them is lost; anything kept here survives tab switches
 @Composable
-fun AppScaffold() {
+fun AppScaffold(themeSettings: ThemeSettings) {
     var currentTab by remember { mutableStateOf(Tab.QUEUE) }
     val context = LocalContext.current
     // All playback state and controls live in PlayerState (PlayerConnection.kt); here only read fields and call methods
@@ -298,7 +306,7 @@ fun AppScaffold() {
                     )
                 }
                 Tab.STORAGE -> FoldersScreen(allTracks = allTracks, library = library)
-                Tab.DOWNLOADER -> Placeholder("Downloader")
+                Tab.DOWNLOADER -> ThemePickerScreen(settings = themeSettings) // TODO: temporary, move to Settings
             }
             actionTrack?.let { track ->
                 TrackActionsDialog(

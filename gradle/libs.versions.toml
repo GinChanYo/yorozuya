@@ -9,10 +9,11 @@ junitVersion = "1.1.5"
 espressoCore = "3.5.1"
 lifecycleRuntimeKtx = "2.6.1"
 activityCompose = "1.8.0"
-kotlin = "2.2.10"
+kotlin = "2.4.21"
 composeBom = "2026.02.01"
 media3 = "1.11.0"
 reorderable = "3.1.0"
+materialKolor = "6.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -35,6 +36,8 @@ androidx-room3-runtime = {module = "androidx.room3:room3-runtime", version.ref =
 androidx-room3-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room3"}
 androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite"}
 reorderable = {module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable"}
+material-kolor = { module = "com.materialkolor:material-kolor-material3", version.ref = "materialKolor" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

@@ -1,52 +1,40 @@
 package io.github.ginchanyo.yorozuya.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import com.materialkolor.material3.rememberDynamicColorScheme
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
-)
-
+// Plain values instead of ThemeSettings itself: the theme doesn't care where they come from,
+// and previews can call YorozuyaTheme { } without SharedPreferences
 @Composable
 fun YorozuyaTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    theme: AppTheme = AppTheme.DYNAMIC,
+    mode: ThemeMode = ThemeMode.SYSTEM,
+    amoled: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
+    val darkTheme = when (mode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
 
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+    // Local copy so Kotlin can smart-cast Color? to Color inside the else branch
+    val seed = theme.seed
+    val colorScheme = if (seed == null) {
+        // Wallpaper colors (Android 12+, always available since minSdk is 33)
+        val context = LocalContext.current
+        val scheme = if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        // System scheme has no AMOLED option, so paint the big surfaces pure black ourselves
+        if (amoled && darkTheme) scheme.copy(background = Color.Black, surface = Color.Black) else scheme
+    } else {
+        // MaterialKolor builds the full scheme from one seed; remember* caches it until inputs change
+        rememberDynamicColorScheme(seedColor = seed, isDark = darkTheme, isAmoled = amoled)
     }
 
     MaterialTheme(

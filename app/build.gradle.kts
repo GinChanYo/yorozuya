@@ -64,5 +64,6 @@ dependencies {
     implementation(libs.androidx.room3.runtime)
     implementation(libs.androidx.sqlite.bundled)
     implementation(libs.reorderable)
+    implementation(libs.material.kolor)
     ksp(libs.androidx.room3.compiler)
 }
