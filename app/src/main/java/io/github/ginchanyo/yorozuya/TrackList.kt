@@ -61,6 +61,7 @@ fun TrackRow(
     isPlaying: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
+    // Slot: the caller passes a piece of UI to draw at the row's end (e.g. a drag handle icon). null - nothing is drawn
     dragHandle: (@Composable () -> Unit)? = null
 ) {
     val titleColor = if (isCurrent) {
@@ -90,9 +91,9 @@ fun TrackRow(
                 style = MaterialTheme.typography.bodySmall
             )
         }
-            if (dragHandle != null){
-                Spacer(modifier = Modifier.width(8.dp))
-                dragHandle()
-            }
+        if (dragHandle != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            dragHandle()
+        }
     }
 }

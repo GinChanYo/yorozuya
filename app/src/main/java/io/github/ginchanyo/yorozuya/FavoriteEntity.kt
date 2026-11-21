@@ -8,5 +8,7 @@ import androidx.room3.PrimaryKey
 data class FavoriteEntity(
     @PrimaryKey val trackId: Long,
     val addedAt: Long = System.currentTimeMillis(),
+    // defaultValue - SQL DEFAULT for rows that existed before this column; AutoMigration 2->3 needs it.
+    // "= 0" is only the Kotlin default for new FavoriteEntity(...) objects
     @ColumnInfo(defaultValue = "0") val position: Int = 0
 )

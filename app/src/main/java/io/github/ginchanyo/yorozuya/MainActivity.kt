@@ -85,7 +85,7 @@ fun AppScaffold() {
             job.cancel()
         }
     }
-    // Keeps scroll position (and last visible items) of the Queue list. Lives here, not in TrackScreen,
+    // Keeps scroll position (and last visible items) of the Queue list. Lives here, not in QueueScreen,
     // so it survives tab switches: the list reopens where it was and auto-scroll doesn't fire again
     val listState = rememberLazyListState()
     var allTracks by remember { mutableStateOf(emptyList<Track>()) }
@@ -290,6 +290,7 @@ fun AppScaffold() {
                         onRename = if (target is PlaylistTarget.Custom){
                             { newName -> scope.launch {playlistDao.rename(target.id, newName)}}
                         }else null,
+                        // when over the sealed interface: every list type is covered, so the result is never null
                         onReorder = when (target){
                             PlaylistTarget.Favorites -> { ids -> scope.launch { favoriteDao.reorder(ids) } }
                             is PlaylistTarget.Custom -> { ids -> scope.launch {playlistDao.reorder(target.id, ids)}}

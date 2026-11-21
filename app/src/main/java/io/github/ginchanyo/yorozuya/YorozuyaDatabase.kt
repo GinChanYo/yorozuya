@@ -11,7 +11,9 @@ import kotlinx.coroutines.Dispatchers
 @Database(
     entities = [FavoriteEntity::class, PlaylistEntity::class, PlaylistTrackEntity::class],
     version = 3,
-    autoMigrations = [AutoMigration(from =1, to =2), AutoMigration(from = 2, to = 3)]
+    // Whole upgrade chain: an install on any older version is migrated step by step.
+    // 2->3: position column in favorites (for reordering)
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)]
 )
 abstract class YorozuyaDatabase : RoomDatabase(){
     abstract fun favoriteDao() : FavoriteDao

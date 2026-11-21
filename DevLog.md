@@ -937,3 +937,66 @@ This resolves most of the "Known issues" from the previous entry (all except the
 - After removing a track from Favorites in the detail screen, the Now tab heart updates (same `Flow`), but no undo.
 - `FavoriteScreen.kt`, `favoriteTracks` and `favoriteListState` are still unused.
 - `TrackActionsDialog` is only reachable from Queue (the detail screen uses long press for "Remove").
+
+---
+
+## 2026-11-21 — Drag-and-drop reordering in playlists and Favorites, new tracks on top
+
+### Added: library `sh.calvin.reorderable` 3.1.0
+- `libs.versions.toml`: `reorderable = "3.1.0"` + `reorderable = { module = "sh.calvin.reorderable:reorderable", ... }`; `app/build.gradle.kts`: `implementation(libs.reorderable)`.
+- AGP bumped 9.5.1 → 9.5.2 in the same change.
+
+### Added: `ReorderableTrackList.kt`
+- Same parameters as `TrackList`, plus `onMove(from, to)` and `onDragEnd()`. The list owns no order: it reports moves, the caller changes its list and passes it back as `tracks`.
+- `rememberReorderableLazyListState(listState) { from, to -> onMove(from.index, to.index) }`: wraps the normal `LazyListState`. The lambda runs every time the dragged row passes another one, so several times per drag.
+- `items(tracks, key = { it.id })` + `ReorderableItem(state, key = track.id) { isDragging -> }`: the key is required, because indices change while dragging. `isDragging` lifts the row with `Surface(tonalElevation = 4.dp)`.
+- `Modifier.draggableHandle(onDragStopped = { onDragEnd() })` on the handle icon (`ic_drag_handle.xml`): drag starts only from the icon, so tap and long press on the row still work.
+
+### Changed: `TrackRow` got a slot `dragHandle: (@Composable () -> Unit)? = null`
+- A **slot**: the caller passes a piece of UI to draw at the end of the row. `null` (default) draws nothing, so `TrackList` didn't change.
+- It is drawn after the text `Column` (which has `weight(1f)`), so it sits at the right edge.
+
+### Changed: `PlaylistDetailScreen` reorders
+- `onReorder: ((List<Long>) -> Unit)?` parameter. With it, `ReorderableTrackList` is shown instead of `TrackList`.
+- `var reordered by remember(tracks) { mutableStateOf(tracks) }`: a local copy changed while dragging. When the database sends a new list, the key `tracks` changes and the copy is reset to it.
+- `onMove` only changes local state: `reordered.toMutableList().apply { add(to, removeAt(from)) }`. `apply` runs the block on the copy and returns the copy; a new list object is what `mutableStateOf` notices.
+- `onDragEnd` saves once per drag: `onReorder(reordered.map { it.id })`.
+- **`AppScaffold`:** `onReorder = when (target) { Favorites -> favoriteDao.reorder(ids); is Custom -> playlistDao.reorder(id, ids) }`, both in `scope.launch`.
+
+### Added: `reorder` in the DAOs
+- `setPosition(...)`: `UPDATE ... SET position = :position WHERE ...`.
+- `@Transaction suspend fun reorder(..., trackIds)` with `forEachIndexed { index, id -> setPosition(id, index) }`: writes positions 0..n-1 as one atomic step.
+
+### Added: the playing queue follows the new order
+- **Problem:** `playQueue` sends a *copy* of the list to the service (`setMediaItems`). Reordering changed the database and the screen, but the player kept the old order.
+- **`PlayerState.moveInQueue(oldOrder, from, to)`:** reads queue ids with `(0 until mc.mediaItemCount).map { mc.getMediaItemAt(it).mediaId }`. If they `==` the playlist's old order (list `==` compares contents), calls `mc.moveMediaItem(from, to)`. The current track keeps playing. Otherwise the queue is some other list (e.g. all tracks) and is left alone.
+- Called in `onMove` **before** `reordered` is updated, because the check needs the old order. Every step is mirrored, so the next check still matches.
+- With shuffle on, the moved track gets a new random spot in the shuffle order.
+
+### Added: Favorites can be reordered (Room database version 3)
+- **`FavoriteEntity`:** `@ColumnInfo(defaultValue = "0") val position: Int = 0`. `defaultValue` is the SQL `DEFAULT` for rows that already exist; `AutoMigration` needs it to add a non-null column.
+- **`YorozuyaDatabase`:** `version = 3`, `autoMigrations = [AutoMigration(1, 2), AutoMigration(2, 3)]`. The list is the whole upgrade chain, so old steps stay. `schemas/.../3.json` committed.
+- **`FavoriteDao.observeIds()`:** `ORDER BY position, addedAt DESC`. Before, it had no `ORDER BY`, so rows came by `trackId` (an `INTEGER PRIMARY KEY` is SQLite's internal row id). After migration all old rows have position 0, and `addedAt DESC` shows them newest first.
+
+### Changed: new tracks go to the top of playlists and Favorites
+- `nextPosition` → `topPosition` in both DAOs: `SELECT COALESCE(MIN(position), 1) - 1`. One less than the current top, so the new track sorts first. Positions may go negative; only one row is written. The first drag renumbers everything back to 0..n-1.
+- `toggleFavorite`: `FavoriteEntity(trackId = id, position = favoriteDao.topPosition())`.
+
+### Bugs fixed during development
+- **`if (tracks.isEmpty()) { ... }` followed by a separate `if (onReorder != null)`:** the empty state and the list were both drawn, each with `weight(1f)`. Fixed with `else if`.
+- **Drag handle inside the text `Column`:** it was drawn under the artist name, and `Spacer(Modifier.width(...))` does nothing in a `Column`. Moved into the `Row`.
+- **`onReorder` called in `onMove`:** one database transaction per step; each write made Room emit, `remember(tracks)` reset the copy mid-drag, so rows could jump back. Moved to `onDragEnd`.
+- **`onDragEnd = onReorder(...)` without braces:** calls `onReorder` during composition and passes `Unit` → type mismatch. Needs `{ onReorder(...) }`.
+- **`onDragEnd` accepted but never called:** `draggableHandle()` had no `onDragStopped`, so drags were never saved.
+- **`ReorderableTrackList.kt` staged as an empty class stub (`AM` in git status):** it needed `git add` again.
+- **`position` declared after the closing `)` of `FavoriteEntity`:** a top-level variable, not a column.
+- **`autoMigrations` replaced instead of extended:** `1 → 2` must stay in the list.
+- **`FavoriteDao` methods copied from `PlaylistDao` still used `playlist_tracks` / `playlistId`:** valid SQL, so reordering Favorites would have changed playlist positions. Then a leftover `playlistId` parameter → KSP "Unused parameter".
+- **`position = favoriteDao.nextPosition()` inside `onToggleFavorite`:** `position` isn't a variable there, and a `suspend` function can't be called outside a coroutine.
+- **`MAX(position) - 1` instead of `MIN(position) - 1`:** gave a duplicate position near the end instead of the top.
+- `PlaylistDao.kt` was indented 4 extra spaces; comment "Lives here, not in TrackScreen" → `QueueScreen`.
+
+### Known issues / next steps
+- `onReorder` is now never `null` (both list types are covered by `when`), so the `TrackList` branch in `PlaylistDetailScreen` is dead and the parameter could be non-nullable.
+- `FavoriteScreen.kt` and `FavoriteDao.observeIdsNewestFirst()` are unused.
+- No DevLog entry for 2026-11-18 (playlist track counts and renaming).

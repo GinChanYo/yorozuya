@@ -50,6 +50,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | Lambda with receiver | Inside `Row { }`, `this` is `RowScope` → `Modifier.weight` available. |
 | Function types `() -> Unit`, `(Float) -> Unit` | Like `Action`, `Action<float>`. A lambda can be stored in a `val` and passed down: `val showMessage: (String) -> Unit = { ... }`. |
 | Nullable function type `((Track) -> Unit)? = null` | Optional callback; check `!= null` before calling. |
+| `onDragEnd = { f(x) }` vs `onDragEnd = f(x)` | With braces: a lambda, runs later. Without: `f` is called **now** and its result (`Unit`) is passed → type mismatch with `() -> Unit`. |
 | `if (f != null) { { f(x) } } else null` | Outer `{ }` = `if` branch, inner `{ }` = lambda: wraps "call `f` with `x`" into `() -> Unit`. |
 | Expression body `fun f(): Boolean = a != b` | `=` instead of `{ }`: the expression is returned (C# `=>`). A `{ }` body needs `return`, otherwise it returns `Unit`. |
 | `"Removed \"${t.title}\""` | `\"` = quote inside a string, combined with a template. |
@@ -60,6 +61,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `"🔀"` | Emoji as UTF-16 surrogate pair. |
 | `or` | Bitwise OR (`|` in C#), e.g. combining flags. |
 | `0 until n` | Range 0..n-1. |
+| `list1 == list2` | Compares contents element by element (`SequenceEqual`), not references. |
 | `x in coll` / `!in` | Membership test (`Contains`). |
 | `a to b` | Creates a `Pair(a, b)`. |
 | `(path, list) ->` | Destructuring in lambda params (tuple deconstruction). |
@@ -76,6 +78,10 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `map { }` | Transform each item (`Select`). |
 | `mapNotNull { }` | `map` dropping nulls. |
 | `associateBy { it.id }` | `Map` key → item (`ToDictionary`); `map[key]` returns `T?`. |
+| `apply { }` | Run block with the value as `this`, return the value: `list.toMutableList().apply { add(to, removeAt(from)) }`. |
+| `toMutableList()` | Mutable copy of a list (the original is unchanged). |
+| `removeAt(i)`, `add(i, x)` | Remove by index (returns the item) / insert at index. Together = move an item. |
+| `forEachIndexed { i, x -> }` | Loop with index (`for` + counter). |
 | `also { }` | Do something with the value (`it`), return the value itself: `build().also { instance = it }`. |
 | `flatMap { }` | Each item → list, merged (`SelectMany`). |
 | `filter { }` | Keep matching (`Where`). |
@@ -162,6 +168,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | Recomposition | Compose calling the composable again with new state. |
 | `remember { }` | Keep a value across recompositions (lost when leaving composition). |
 | `remember(key1, key2) { }` | Recompute when a key changes. |
+| `var copy by remember(src) { mutableStateOf(src) }` | Local editable copy of a parameter, reset whenever a new `src` arrives (e.g. list reordered while dragging, reset by the database). |
 | `mutableStateOf(x)` | Observable value; writing it triggers redraw of readers. |
 | `var x by remember { mutableStateOf(...) }` | Standard pattern for local UI state. |
 | `mutableStateOf<Track?>(null)` | Explicit type when the initial value is `null` (otherwise the type would be `Nothing?`). |
@@ -179,6 +186,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | Effect placement | Effects live as long as their composable. A tab screen leaves composition when switched away, so an effect that must always run belongs in a parent that's always composed. |
 | `BackHandler(onBack = ...)` | Intercept system back (gesture/button) while this composable is shown (`androidx.activity.compose`). |
 | State hoisting | State goes down as parameters, events go up as callbacks. |
+| Slot parameter `dragHandle: (@Composable () -> Unit)? = null` | Caller passes a piece of UI to draw inside the component; `null` = nothing. Same idea as `title = { Text(...) }` in `AlertDialog`. |
 | Parameter order convention | Required parameters → `modifier: Modifier = Modifier` → optional parameters. |
 | `rememberXxx()` naming | Composable that creates and keeps an object; lowercase because it returns a value. |
 
@@ -200,6 +208,13 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Arrangement.SpaceBetween` | First at start, last at end, space between. |
 | `Arrangement.SpaceEvenly` | Equal gaps everywhere, including edges. |
 | `Dp`, `.dp` | Density-independent pixels: `16.dp`. |
+
+### Reorderable (`sh.calvin.reorderable`)
+| Name | Meaning |
+|---|---|
+| `rememberReorderableLazyListState(listState) { from, to -> }` | Wraps a `LazyListState`; the lambda runs each time the dragged item passes another (several times per drag). `from.index` / `to.index`. |
+| `ReorderableItem(state, key) { isDragging -> }` | Makes a `LazyColumn` row movable; `key` must match the `items(key = ...)` key. |
+| `Modifier.draggableHandle(onDragStarted, onDragStopped)` | Drag starts only from this element (inside `ReorderableItem`); `onDragStopped` = finger released, the place to save. |
 
 ## 7. Modifiers (chained, applied in order)
 
@@ -268,6 +283,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `setMediaItems(items, index, posMs)`, `prepare()`, `play()`, `pause()`, `stop()`, `release()` | Queue and transport control. |
 | `seekTo(ms)`, `seekToNextMediaItem()`, `seekToPreviousMediaItem()` | Seeking. |
 | `isPlaying`, `currentPosition`, `duration`, `currentMediaItem`, `currentMediaItemIndex`, `mediaItemCount`, `getMediaItemAt(i)`, `clearMediaItems()` | Player state / queue access. |
+| `moveMediaItem(from, to)` | Move an item inside the queue; the current track keeps playing. With shuffle on, the moved item gets a new random shuffle spot. |
 | `shuffleModeEnabled`, `repeatMode` (`REPEAT_MODE_OFF/ALL/ONE`) | Modes. |
 | `C.TIME_UNSET` | Negative "unknown" duration before prepare. |
 | `Player.Listener` | `onIsPlayingChanged`, `onMediaItemTransition`, `onShuffleModeEnabledChanged`, `onRepeatModeChanged`. |
@@ -306,8 +322,11 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `@Entity(primaryKeys = ["a", "b"])` | Composite key: the pair must be unique. |
 | `ForeignKey(entity, parentColumns, childColumns, onDelete = ForeignKey.CASCADE)` | Link to another table; deleting the parent deletes child rows. |
 | `@Transaction` on a DAO function with a body | Several queries run as one atomic step. |
-| `COALESCE(a, b)` (SQL) | First non-null value: `COALESCE(MAX(position), -1) + 1` → 0 for an empty table. |
-| `@Database(entities = [...], version = 2, autoMigrations = [AutoMigration(from = 1, to = 2)])` | Database class: `abstract class X : RoomDatabase()`, `abstract fun xDao()`. Bump `version` on schema change; `AutoMigration` diffs the exported JSON schemas (both must exist). |
+| `COALESCE(a, b)` (SQL) | First non-null value. `COALESCE(MAX(position), -1) + 1` → next position at the end; `COALESCE(MIN(position), 1) - 1` → position above the top (negatives are fine). Both give 0 for an empty table. |
+| `ORDER BY position, addedAt DESC` (SQL) | Sort by the first column; equal values are sorted by the second (`DESC` = newest first). |
+| `@ColumnInfo(defaultValue = "0")` | SQL `DEFAULT` for the column; needed when adding a non-null column to an existing table (rows that already exist get it). The Kotlin `= 0` only applies to new objects. |
+| `UPDATE t SET col = :v WHERE ...` in `@Query` | Write query; `suspend fun` returning nothing. |
+| `@Database(entities = [...], version = 2, autoMigrations = [AutoMigration(from = 1, to = 2)])` | Database class: `abstract class X : RoomDatabase()`, `abstract fun xDao()`. Bump `version` on schema change; `AutoMigration` diffs the exported JSON schemas (both must exist). Keep **all** steps in the list (`1→2`, `2→3`, ...): an old install is upgraded step by step. |
 | `Room.databaseBuilder<X>(context, name)` | Create the database; `.setDriver(BundledSQLiteDriver())`, `.setQueryCoroutineContext(Dispatchers.IO)`, `.build()`. |
 | `room3 { schemaDirectory(...) }` | Export table layout to JSON (commit it; used for migrations). |
 | Function returning `Flow<T>` | Observable query, not `suspend`. One-off reads/writes are `suspend`. |
@@ -337,7 +356,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `FavoriteScreen.kt` | `FavoriteScreen(player, tracks, listState)` | Old favorites list, no longer used (replaced by `PlaylistDetailScreen`). |
 | | `Placeholder(name)` | Stub screen for unfinished tabs. |
 | `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick, onTrackLongClick?, bottomPadding)` | Scrollable track list; `bottomPadding` = space under the last item. |
-| | `TrackRow(track, isCurrent, isPlaying, onClick, onLongClick?)` | One row: cover + title/artist; tap + long press. |
+| | `TrackRow(track, isCurrent, isPlaying, onClick, onLongClick?, dragHandle?)` | One row: cover + title/artist (+ optional drag handle at the end); tap + long press. |
+| `ReorderableTrackList.kt` | `ReorderableTrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick, onTrackLongClick, onMove, onDragEnd)` | Track list with drag handles; reports moves, owns no order itself. |
 | `NowPlayingBar.kt` | `NowPlayingBar(track, isPlaying, on...Click, player)` | Mini player: seek bar, cover, title, prev/play/next. |
 | | `formatTime(ms)` | `83500` → `"1:23"`. |
 | `SeekBar.kt` | `PlayerSeekBar(player, modifier)` | Slider + time labels with own drag state; used by mini player and "Now" tab. |
@@ -354,20 +374,22 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | | `syncFrom(p)` | Copy current state after connecting. |
 | | `playQueue(tracks, startIndex)` | Replace queue and play. |
 | | `playOrToggle(track, queue)` | List tap: playing track → pause/resume, other → play queue from it. |
+| | `moveInQueue(oldOrder, from, to)` | Mirror a playlist drag onto the live queue, only if the queue is exactly that playlist. |
 | | `togglePlayPause()`, `next()`, `previous()`, `seekTo(ms)`, `toggleShuffle()`, `cycleRepeat()` | Controls. |
 | | `rememberPlayerState()` | Connect to service, listen, poll position every 500 ms. |
 | | `repeatModeName(mode)` | `"Off"` / `"All"` / `"One"` for button text and messages. |
 | `PlaybackService.kt` | `PlaybackService : MediaSessionService` | Owns `ExoPlayer` and `MediaSession`, notification, "Close" button. |
 | | `saveState()` / `restoreState(player)` | Persist queue, index, position, shuffle, repeat in prefs `playback_state`. |
 | | `CallBack` | Session callback: allows and handles `stopCommand`. |
-| `FavoriteEntity.kt` | `FavoriteEntity(trackId, addedAt)` | Row of table `favorites`. |
-| `FavoriteDao.kt` | `observeIds()`, `observeIdsNewestFirst()`, `add(fav)`, `remove(id)` | Favorites queries. |
-| `YorozuyaDatabase.kt` | `YorozuyaDatabase.get(context)` | Singleton Room database `yorozuya.db` (version 2). |
+| `FavoriteEntity.kt` | `FavoriteEntity(trackId, addedAt, position)` | Row of table `favorites`. |
+| `FavoriteDao.kt` | `observeIds()` (by position), `observeIdsNewestFirst()` (unused), `add(fav)`, `remove(id)`, `topPosition()`, `setPosition()`, `reorder(ids)` | Favorites queries. |
+| `YorozuyaDatabase.kt` | `YorozuyaDatabase.get(context)` | Singleton Room database `yorozuya.db` (version 3). |
 | `PlaylistEntity.kt` | `PlaylistEntity(id, name, createdAt)` | Row of table `playlists`. |
 | `PlaylistTrackEntity.kt` | `PlaylistTrackEntity(playlistId, trackId, position)` | Row of table `playlist_tracks`; cascade-deleted with its playlist. |
-| `PlaylistDao.kt` | `observePlaylists()`, `createPlaylist()`, `deletePlaylist(id)`, `observeTrackIds(id)`, `addTrack(): Boolean`, `removeTrack()` | Playlist queries. |
+| `PlaylistDao.kt` | `observePlaylists()`, `createPlaylist()`, `deletePlaylist(id)`, `observeTrackIds(id)`, `topPosition(id)`, `addTrack(): Boolean`, `removeTrack()`, `observeCounts()`, `rename()`, `setPosition()`, `reorder(id, ids)` | Playlist queries. |
 | `PlaylistTarget.kt` | `sealed interface PlaylistTarget { Favorites, Custom(id) }` | Which list is opened on the Playlists tab. |
-| `PlaylistsScreen.kt` | `PlaylistsScreen(playlists, favoritesCount, onOpen, onCreate)` | Playlists tab: Favorites + playlists + "New Playlist" dialog. |
-| `PlaylistDetailScreen.kt` | `PlaylistDetailScreen(title, tracks, player, listState, onBack, onDelete?, onRemoveTrack)` | Opened playlist: header with back/delete, track list, `BackHandler`, long press → remove dialog. |
+| `PlaylistsScreen.kt` | `PlaylistsScreen(playlists, favoritesCount, onOpen, onCreate, counts)` | Playlists tab: Favorites + playlists with track counts + "New Playlist" dialog. |
+| | `PlaylistNameDialog(title, confirmLabel, initialName, onConfirm, onDismiss)` | Name input dialog, shared by create and rename. |
+| `PlaylistDetailScreen.kt` | `PlaylistDetailScreen(title, tracks, player, listState, onBack, onDelete?, onRemoveTrack, onRename?, onReorder?)` | Opened playlist: header with back/rename/delete, reorderable track list, `BackHandler`, long press → remove dialog. |
 | `TrackActionsDialog.kt` | `TrackActionsDialog(track, isFavorite, playlists, onToggleFavorite, onAddTo, onDismiss)` | Long-press menu: favorite toggle + "Add to <playlist>". |
 | Prefs `library` | `paths` (string set), `subfolders` (bool) | Folder filter, read/written by `LibraryFilter`. |

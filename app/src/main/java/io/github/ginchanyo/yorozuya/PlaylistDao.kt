@@ -21,8 +21,10 @@ interface PlaylistDao {
     @Query("SELECT trackId FROM playlist_tracks WHERE playlistId = :playlistId ORDER BY position")
     fun observeTrackIds(playlistId: Long): Flow<List<Long>>
 
-    @Query("SELECT COALESCE(MIN(position), 1) -1 FROM playlist_tracks WHERE playlistId =:playlistId")
-    suspend fun nextPosition(playlistId: Long): Int
+    // New tracks go on top: one less than the current smallest position (negatives are fine, ORDER BY still works).
+    // Empty playlist: MIN is NULL, COALESCE falls back to 1, so the first track gets 0
+    @Query("SELECT COALESCE(MIN(position), 1) - 1 FROM playlist_tracks WHERE playlistId = :playlistId")
+    suspend fun topPosition(playlistId: Long): Int
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTrack(row: PlaylistTrackEntity): Long
@@ -31,7 +33,7 @@ interface PlaylistDao {
     // Expression body (= instead of { }): the value of the expression is returned.
     // @Insert with IGNORE returns -1 when the row already exists, so false = track was already in the playlist
     suspend fun addTrack(playlistId: Long, trackId: Long): Boolean =
-        insertTrack(PlaylistTrackEntity(playlistId, trackId, nextPosition(playlistId))) != -1L
+        insertTrack(PlaylistTrackEntity(playlistId, trackId, topPosition(playlistId))) != -1L
 
     @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId and trackId = :trackId")
     suspend fun removeTrack(playlistId: Long, trackId: Long)
@@ -45,6 +47,8 @@ interface PlaylistDao {
     @Query("UPDATE playlist_tracks SET position = :position WHERE playlistId = :playlistId AND trackId = :trackId")
     suspend fun setPosition(playlistId: Long, trackId: Long, position: Int)
 
+    // Writes positions 0..n-1 in the given order. @Transaction - all updates commit together or none do,
+    // so a crash mid-way can't leave the playlist half-reordered (and Room's Flow emits once, not n times)
     @Transaction
     suspend fun reorder(playlistId: Long, trackIds: List<Long>) {
         trackIds.forEachIndexed { index, trackId ->

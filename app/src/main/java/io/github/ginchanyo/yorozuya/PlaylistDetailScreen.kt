@@ -42,6 +42,8 @@ fun PlaylistDetailScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     var trackToRemove by remember { mutableStateOf<Track?>(null) }
     var showRename by remember {mutableStateOf(false)}
+    // Local copy changed while dragging. Key `tracks`: when the database sends a new list
+    // (after save, add or remove), the copy is reset to it
     var reordered by remember(tracks) { mutableStateOf(tracks) }
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -89,11 +91,14 @@ fun PlaylistDetailScreen(
                 listState = listState,
                 onTrackClick = { player.playOrToggle(it, reordered)},
                 onTrackLongClick = {trackToRemove = it},
-                onMove = {from, to ->
-                    // before updating reordered: the check needs the old order
+                onMove = { from, to ->
+                    // Before updating reordered: the check needs the old order
                     player.moveInQueue(reordered, from, to)
-                    reordered = reordered.toMutableList().apply {add(to, removeAt(from))}
+                    // New list (state must get a new object to notice the change). apply - runs the block on the
+                    // copy and returns the copy; removeAt returns the removed item, add puts it at `to`
+                    reordered = reordered.toMutableList().apply { add(to, removeAt(from)) }
                 },
+                // Database is written once per drag, not on every step
                 onDragEnd = { onReorder(reordered.map { it.id }) },
                 modifier = Modifier.weight(1f).fillMaxWidth()
             )

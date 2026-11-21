@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.dp
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
+// TrackList with drag-and-drop (library sh.calvin.reorderable). The list itself owns no order:
+// it reports moves through onMove, the caller changes its list, and the new list comes back as `tracks`
 @Composable
 fun ReorderableTrackList(
     tracks: List<Track>,
@@ -24,13 +26,18 @@ fun ReorderableTrackList(
     onDragEnd: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Wraps the normal LazyListState and calls the lambda each time the dragged item passes another one
+    // (several times per drag). from/to are LazyListItemInfo; .index - position in the list
     val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
         onMove(from.index, to.index)
     }
 
     LazyColumn(state = listState, modifier = modifier) {
+        // key is required: the library finds the dragged row by key, not by index (indices change while dragging)
         items(tracks, key = { it.id }) { track ->
+            // ReorderableItem - makes the row movable; isDragging is true only for the row under the finger
             ReorderableItem(reorderableState, key = track.id) { isDragging ->
+                // Tinted background lifts the dragged row visually above the others
                 Surface(tonalElevation = if (isDragging) 4.dp else 0.dp) {
                     TrackRow(
                         track = track,
@@ -42,7 +49,9 @@ fun ReorderableTrackList(
                             Icon(
                                 painter = painterResource(R.drawable.ic_drag_handle),
                                 contentDescription = "Reorder",
-                                modifier = Modifier.draggableHandle(onDragStopped = {onDragEnd()})
+                                // Drag starts only from the icon, so tap/long press on the row still work.
+                                // onDragStopped - finger released: the single moment the order is saved
+                                modifier = Modifier.draggableHandle(onDragStopped = { onDragEnd() })
                             )
                         }
                     )
