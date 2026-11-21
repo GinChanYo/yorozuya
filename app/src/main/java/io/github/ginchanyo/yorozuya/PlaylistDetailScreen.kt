@@ -35,12 +35,14 @@ fun PlaylistDetailScreen(
     onDelete: (() -> Unit)?,
     onRemoveTrack: (Track) -> Unit,
     onRename: ((String) -> Unit)?,
+    onReorder: ((List<Long>) -> Unit)?,
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onBack)
     var confirmDelete by remember { mutableStateOf(false) }
     var trackToRemove by remember { mutableStateOf<Track?>(null) }
     var showRename by remember {mutableStateOf(false)}
+    var reordered by remember(tracks) { mutableStateOf(tracks) }
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -78,7 +80,25 @@ fun PlaylistDetailScreen(
             ) {
                 Text("Nothing here yet")
             }
-        } else {
+        }
+        else if(onReorder != null){
+            ReorderableTrackList(
+                tracks = reordered,
+                currentTrackId = player.currentTrackId,
+                isPlaying = player.isPlaying,
+                listState = listState,
+                onTrackClick = { player.playOrToggle(it, reordered)},
+                onTrackLongClick = {trackToRemove = it},
+                onMove = {from, to ->
+                    // before updating reordered: the check needs the old order
+                    player.moveInQueue(reordered, from, to)
+                    reordered = reordered.toMutableList().apply {add(to, removeAt(from))}
+                },
+                onDragEnd = { onReorder(reordered.map { it.id }) },
+                modifier = Modifier.weight(1f).fillMaxWidth()
+            )
+        }
+        else {
             TrackList(
                 tracks = tracks,
                 currentTrackId = player.currentTrackId,

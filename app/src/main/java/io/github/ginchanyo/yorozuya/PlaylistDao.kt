@@ -41,6 +41,16 @@ interface PlaylistDao {
 
     @Query("UPDATE playlists SET name = :name WHERE id = :playlistId")
     suspend fun rename(playlistId: Long, name: String)
+
+    @Query("UPDATE playlist_tracks SET position = :position WHERE playlistId = :playlistId AND trackId = :trackId")
+    suspend fun setPosition(playlistId: Long, trackId: Long, position: Int)
+
+    @Transaction
+    suspend fun reorder(playlistId: Long, trackIds: List<Long>) {
+        trackIds.forEachIndexed { index, trackId ->
+            setPosition(playlistId, trackId, index)
+        }
+    }
 }
 
 data class PlaylistCount(val playlistId: Long, val count: Int)

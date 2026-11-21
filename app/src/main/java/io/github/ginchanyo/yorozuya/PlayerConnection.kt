@@ -80,6 +80,20 @@ class PlayerState{
         else playQueue(queue, queue.indexOf(track))
     }
 
+    // Mirrors a drag in a playlist onto the live queue, so playback follows the new order.
+    // Only when the queue is exactly that playlist in its old order - otherwise it's some other
+    // list (e.g. All tracks) and moving items there would scramble it
+    fun moveInQueue(oldOrder: List<Track>, from: Int, to: Int){
+        val mc = controller ?: return
+        // "0 until n" - range 0..n-1; map turns each index into the mediaId stored in playQueue
+        val queueIds = (0 until mc.mediaItemCount).map { mc.getMediaItemAt(it).mediaId }
+        // == on lists compares contents element by element (like SequenceEqual in C#)
+        if (queueIds == oldOrder.map { it.id.toString() }) {
+            // moves the item inside the queue without interrupting the current track
+            mc.moveMediaItem(from, to)
+        }
+    }
+
     // Single-expression bodies; "?." - call only if controller isn't null, otherwise do nothing
     fun next() { controller?.seekToNextMediaItem()}
     fun previous() {controller?.seekToPreviousMediaItem()}

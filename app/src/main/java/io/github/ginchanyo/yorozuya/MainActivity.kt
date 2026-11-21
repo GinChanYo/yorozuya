@@ -290,6 +290,9 @@ fun AppScaffold() {
                         onRename = if (target is PlaylistTarget.Custom){
                             { newName -> scope.launch {playlistDao.rename(target.id, newName)}}
                         }else null,
+                        onReorder = if (target is PlaylistTarget.Custom){
+                            { ids -> scope.launch {playlistDao.reorder(target.id, ids)}}
+                        } else null
                     )
                 }
                 Tab.STORAGE -> FoldersScreen(allTracks = allTracks, library = library)

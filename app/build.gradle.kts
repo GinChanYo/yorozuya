@@ -63,5 +63,6 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.room3.runtime)
     implementation(libs.androidx.sqlite.bundled)
+    implementation(libs.reorderable)
     ksp(libs.androidx.room3.compiler)
 }

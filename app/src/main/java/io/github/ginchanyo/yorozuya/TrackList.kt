@@ -61,6 +61,7 @@ fun TrackRow(
     isPlaying: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)?,
+    dragHandle: (@Composable () -> Unit)? = null
 ) {
     val titleColor = if (isCurrent) {
         MaterialTheme.colorScheme.primary
@@ -89,5 +90,9 @@ fun TrackRow(
                 style = MaterialTheme.typography.bodySmall
             )
         }
+            if (dragHandle != null){
+                Spacer(modifier = Modifier.width(8.dp))
+                dragHandle()
+            }
     }
 }
