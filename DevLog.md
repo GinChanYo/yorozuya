@@ -855,7 +855,7 @@ This resolves most of the "Known issues" from the previous entry (all except the
   - `createPlaylist(...)` returns `Long`, the new row id.
   - `deletePlaylist(id)` and `removeTrack(playlistId, trackId)`.
   - `nextPosition(...)` uses `SELECT COALESCE(MAX(position), -1) + 1`: `COALESCE` returns the first non-null value, so an empty playlist gets position 0.
-  - `addTrack(...)` is a function **with a body** in the DAO interface, marked `@Transaction`, so `nextPosition` + `insertTrack` run as one atomic step.
+  - `addTrack(...)` is a function **with a body** in the DAO interface, marked `@Transaction`, so `topPosition` + `insertTrack` run as one atomic step.
 - **`YorozuyaDatabase.kt`:** two new entities, `version = 2`, `autoMigrations = [AutoMigration(from = 1, to = 2)]`. Room compares `schemas/.../1.json` with `2.json` and generates the migration itself (new tables only, so no manual SQL is needed). `2.json` must be committed too.
 - **`PlaylistTarget.kt`:** `sealed interface PlaylistTarget { data object Favorites; data class Custom(val id: Long) }`. A closed set of variants, so `when` over it is exhaustive without `else`, and `is Custom` smart-casts to get `id`.
 - **`PlaylistsScreen.kt`:** a `LazyColumn` with a fixed "Favorites" row (track count), one row per playlist (`items(playlists, key = { it.id })`), and a "+ New Playlist" button. `CreatePlaylistDialog` is a Compose `AlertDialog` with an `OutlinedTextField`. "Create" is disabled while the name is blank, and the name is `trim()`ed.

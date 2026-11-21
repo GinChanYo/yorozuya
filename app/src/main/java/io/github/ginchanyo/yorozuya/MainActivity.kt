@@ -154,7 +154,7 @@ fun AppScaffold() {
                 favoriteDao.remove(id)
                 showMessage("Removed from favorites")
             } else {
-                favoriteDao.add(FavoriteEntity(trackId = id))
+                favoriteDao.add(FavoriteEntity(trackId = id, position = favoriteDao.topPosition()))
                 showMessage("Added to favorites")
             }
         }
@@ -290,9 +290,10 @@ fun AppScaffold() {
                         onRename = if (target is PlaylistTarget.Custom){
                             { newName -> scope.launch {playlistDao.rename(target.id, newName)}}
                         }else null,
-                        onReorder = if (target is PlaylistTarget.Custom){
-                            { ids -> scope.launch {playlistDao.reorder(target.id, ids)}}
-                        } else null
+                        onReorder = when (target){
+                            PlaylistTarget.Favorites -> { ids -> scope.launch { favoriteDao.reorder(ids) } }
+                            is PlaylistTarget.Custom -> { ids -> scope.launch {playlistDao.reorder(target.id, ids)}}
+                        }
                     )
                 }
                 Tab.STORAGE -> FoldersScreen(allTracks = allTracks, library = library)

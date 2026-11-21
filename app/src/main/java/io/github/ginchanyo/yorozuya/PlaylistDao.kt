@@ -21,7 +21,7 @@ interface PlaylistDao {
     @Query("SELECT trackId FROM playlist_tracks WHERE playlistId = :playlistId ORDER BY position")
     fun observeTrackIds(playlistId: Long): Flow<List<Long>>
 
-    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlistId =:playlistId")
+    @Query("SELECT COALESCE(MIN(position), 1) -1 FROM playlist_tracks WHERE playlistId =:playlistId")
     suspend fun nextPosition(playlistId: Long): Int
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
