@@ -30,6 +30,9 @@ interface FavoriteDao {
     @Query("UPDATE favorites SET position = :position WHERE trackId = :trackId")
     suspend fun setPosition(trackId: Long, position: Int)
 
+    @Query("SELECT * FROM favorites ORDER BY position, addedAt DESC")
+    suspend fun getAll(): List<FavoriteEntity>
+
     // Same as PlaylistDao.reorder: positions 0..n-1 in one transaction
     @Transaction
     suspend fun reorder(trackIds: List<Long>) {

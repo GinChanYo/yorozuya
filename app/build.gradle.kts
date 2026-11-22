@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.androidx.room3)
+    alias(libs.plugins.kotlin.serialization)
 
 }
 
@@ -65,5 +66,6 @@ dependencies {
     implementation(libs.androidx.sqlite.bundled)
     implementation(libs.reorderable)
     implementation(libs.material.kolor)
+    implementation(libs.kotlinx.serialization.json)
     ksp(libs.androidx.room3.compiler)
 }

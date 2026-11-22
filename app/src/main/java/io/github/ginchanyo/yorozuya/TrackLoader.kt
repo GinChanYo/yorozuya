@@ -18,7 +18,8 @@ fun loadTracks(context: Context): List<Track>{
         MediaStore.Audio.Media.ARTIST,
         MediaStore.Audio.Media.ALBUM,
         MediaStore.Audio.Media.DURATION,
-        MediaStore.Audio.Media.RELATIVE_PATH
+        MediaStore.Audio.Media.RELATIVE_PATH,
+        MediaStore.Audio.Media.DISPLAY_NAME
     )
 // selection - condition (WHERE)
 // Condition IS_MUSIC != 0 removed ringtones and notification sounds, so as system sounds. Otherwise, media player would have alarms as well
@@ -39,6 +40,7 @@ fun loadTracks(context: Context): List<Track>{
             val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
             val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
             val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val fileNameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
 
             while (cursor.moveToNext()){
                 val id = cursor.getLong(idCol)
@@ -53,6 +55,7 @@ fun loadTracks(context: Context): List<Track>{
                     album = cursor.getString(albumCol)?.takeIf {it != MediaStore.UNKNOWN_STRING},
                     duration = cursor.getLong(durationCol),
                     relativePath = cursor.getString(pathCol) ?: "",
+                    fileName = cursor.getString(fileNameCol) ?: "",
                 )
             }
         }

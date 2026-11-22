@@ -11,4 +11,7 @@ data class Track(
     val album: String?,
     val duration: Long,
     val relativePath: String,
+    // File name with extension ("song.mp3"). Together with relativePath it identifies the file across devices,
+    // unlike id, which MediaStore assigns anew on every phone
+    val fileName: String,
 )

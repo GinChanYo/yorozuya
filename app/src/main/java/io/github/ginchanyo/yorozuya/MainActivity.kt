@@ -48,10 +48,15 @@ import io.github.ginchanyo.yorozuya.ui.theme.ThemeSettings
 import io.github.ginchanyo.yorozuya.ui.theme.ThemePickerScreen
 import io.github.ginchanyo.yorozuya.ui.theme.YorozuyaTheme
 import io.github.ginchanyo.yorozuya.ui.theme.rememberThemeSettings
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.LocalDate
+import kotlin.system.exitProcess
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -188,6 +193,28 @@ fun AppScaffold(themeSettings: ThemeSettings) {
     val openedTracks = remember(tracksById, openedTrackIds) {
         openedTrackIds.mapNotNull { tracksById[it] }
     }
+    // CreateDocument - system "Save as" dialog; no storage permission needed, the user picks the place.
+    // The lambda gets the chosen file's Uri, or null if the dialog was cancelled
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            try {
+                val text = backupJson.encodeToString(buildBackup(favoriteDao, playlistDao, tracksById))
+                // Writing a file is blocking disk work - move it off the main (UI) thread
+                withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openOutputStream(uri) ?: error("Can't open file")
+                    stream.use { it.write(text.toByteArray()) }
+                }
+                showMessage("Backup saved")
+            } catch (e: CancellationException){
+                throw e
+            } catch (e: Exception) {
+                showMessage("Backup failed: ${e.message}")
+            }
+        }
+    }
     val detailListState = remember(openedList) { LazyListState() }
     // Same auto-scroll as Queue, for the opened playlist / Favorites. Third key: a new list state on every
     // opened list, so opening a playlist re-runs the effect too
@@ -301,8 +328,10 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                                 val id = playlistDao.createPlaylist(PlaylistEntity(name = name))
                                 openedList = PlaylistTarget.Custom(id)
                             }
-                        }
+                        },
+                        onExport = { exportLauncher.launch("yorozuya-${LocalDate.now()}.json") }
                     )
+
                     else -> PlaylistDetailScreen(
                         title = when (target) {
                             PlaylistTarget.Favorites -> "Favorites"
