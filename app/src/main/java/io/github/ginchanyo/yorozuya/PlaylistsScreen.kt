@@ -25,6 +25,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.painterResource
 
+// "Lists" tab: header with backup buttons, Favorites, custom playlists with track counts, "New Playlist".
+// Knows nothing about the database or files: data comes in, taps go out as callbacks (onImport/onExport
+// only report the tap; the file dialogs live in AppScaffold)
 @Composable
 fun PlaylistsScreen(
     playlists: List<PlaylistEntity>,
@@ -37,7 +40,9 @@ fun PlaylistsScreen(
     modifier: Modifier = Modifier
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
+    // Column - fixed header on top, the list takes the rest (weight below)
     Column(modifier = modifier.fillMaxSize()) {
+        // Header: title pushed left by weight(1f), icon buttons at the right edge
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -54,6 +59,7 @@ fun PlaylistsScreen(
                 Icon(painterResource(R.drawable.ic_backup), contentDescription = "Export backup")
             }
         }
+        // weight(1f) - the list gets all height left under the header and scrolls inside it
         LazyColumn(modifier = Modifier.weight(1f)) {
             item {
                 PlaylistRow(

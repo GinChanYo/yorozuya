@@ -30,6 +30,7 @@ interface FavoriteDao {
     @Query("UPDATE favorites SET position = :position WHERE trackId = :trackId")
     suspend fun setPosition(trackId: Long, position: Int)
 
+    // One-off read for backup: same order as observeIds, but a single snapshot instead of a Flow
     @Query("SELECT * FROM favorites ORDER BY position, addedAt DESC")
     suspend fun getAll(): List<FavoriteEntity>
 

@@ -1,7 +1,7 @@
 # Yorozuya Cheat Sheet
 
 Everything used in the code so far, one short line each. C# analogies where they help.
-Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform → Compose runtime → Compose layout → Modifiers → Compose UI elements → Material 3 → Media3 → Room → Gradle → Project code.
+Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform → Compose runtime → Compose layout → Modifiers → Compose UI elements → Material 3 → Media3 → Room (+ kotlinx.serialization) → Gradle → Project code.
 
 ---
 
@@ -45,6 +45,12 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `when { cond -> ... }` | `when` without subject = if/else-if chain. |
 | `if` as expression | `val c = if (a) x else y` (no ternary operator in Kotlin). |
 | `return@LaunchedEffect` | Labeled return: exit only the lambda, not the outer function. |
+| `return@rememberLauncherForActivityResult` | Same labeled return; the label is the name of the function the lambda was passed to. |
+| Extension function `fun Track.toRef() = ...` | Declared outside the class, called like its method: `track.toRef()`; inside, `this` is the `Track` (C# extension method without `static`/`this`). |
+| `suspend fun LazyListState.centerOn(...)` | Extension functions can be `suspend` too. |
+| `class A(x: List<T>)` (no `val`) | Constructor parameter usable only while initializing fields (`private val index = x.groupBy { }`), not stored. |
+| `for (x in list) { }` | Plain loop (`foreach`); clearer than `map` when the body changes counters. |
+| `try { } catch (e: A) { } catch (e: B) { }` | Checked top to bottom: the more specific type goes first. |
 | Lambda `{ x -> ... }` | Anonymous function; single param can be `it`. |
 | Trailing lambda `f(a) { ... }` | Last lambda parameter goes outside `()`. |
 | Lambda with receiver | Inside `Row { }`, `this` is `RowScope` → `Modifier.weight` available. |
@@ -58,6 +64,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Unit` | "No value" type (`void`). |
 | `by` (delegation) | `var x by mutableStateOf(0)` — reads/writes go through the delegate's `getValue`/`setValue`. |
 | String templates `"$x"`, `"${a.b}"` | String interpolation (`$"{x}"`). |
+| `"\${x}"` | `\$` escapes the dollar: the text `${x}` is kept literally, no interpolation (and no compile error). |
+| `16.dp + 8.dp` | `Dp` has `operator fun plus`, so dp values add like numbers. |
 | `"🔀"` | Emoji as UTF-16 surrogate pair. |
 | `or` | Bitwise OR (`|` in C#), e.g. combining flags. |
 | `0 until n` | Range 0..n-1. |
@@ -78,6 +86,10 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `map { }` | Transform each item (`Select`). |
 | `mapNotNull { }` | `map` dropping nulls. |
 | `associateBy { it.id }` | `Map` key → item (`ToDictionary`); `map[key]` returns `T?`. |
+| `associate { it.a to it.b }` | `Map` from a pair per item (key and value both chosen). |
+| `distinctBy { it.name }` | Keep the first item for each key, drop later duplicates (`DistinctBy`). |
+| `toMutableMap()` | Mutable copy of a map. |
+| `map.getOrPut(key) { create() }` | Existing value, or run the block, store its result under `key` and return it (`TryGetValue` + `Add`). |
 | `apply { }` | Run block with the value as `this`, return the value: `list.toMutableList().apply { add(to, removeAt(from)) }`. |
 | `toMutableList()` | Mutable copy of a list (the original is unchanged). |
 | `removeAt(i)`, `add(i, x)` | Remove by index (returns the item) / insert at index. Together = move an item. |
@@ -86,6 +98,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `flatMap { }` | Each item → list, merged (`SelectMany`). |
 | `filter { }` | Keep matching (`Where`). |
 | `groupBy { }` | Map key → list of items (`GroupBy`). |
+| `groupingBy { it.key }.eachCount()` | `Map<key, count>` (SQL `GROUP BY ... COUNT(*)`). |
+| `singleOrNull()` | The only element, or `null` if the list has 0 **or several** (`SingleOrDefault` without the exception). |
 | `count { }`, `any { }` | Count matching / at least one matches. |
 | `firstOrNull { }` | First match or null (`FirstOrDefault`). |
 | `indexOf(x)`, `indexOfFirst { }` | Index or -1. |
@@ -95,6 +109,10 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `.indices` | Range of valid indices. |
 | `isEmpty()`, `isNotEmpty()`, `isNullOrEmpty()` | Emptiness checks (last one also accepts null). |
 | `split(",")` | Split string. |
+| `lowercase()` | Lower-case copy of a string. |
+| `text.toByteArray()` | String → bytes, UTF-8 by default. |
+| `stream.bufferedReader().use { it.readText() }` | Read a whole `InputStream` as text and close it. |
+| `error("msg")` | Throw `IllegalStateException(msg)`; handy after `?:`: `x ?: error("...")`. |
 | `toLongOrNull()` | Parse, null on failure (`long.TryParse`). |
 | `toLong()`, `toFloat()` | Numeric conversion. |
 | `coerceAtLeast(0L)` | Clamp to minimum. |
@@ -115,11 +133,13 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `delay(d)` | Suspend for a while (`await Task.Delay`). |
 | `scope.launch { }` | Start a coroutine; returns a `Job`. Inside a coroutine, `launch` starts a child. |
 | `job.cancel()` | Cancel a coroutine (e.g. one waiting in `showSnackbar` → the bubble disappears). No effect if it already finished. |
-| `withContext(Dispatchers.IO) { }` | Run block on the I/O thread pool, return result to caller. |
+| `withContext(Dispatchers.IO) { }` | Run block on the I/O thread pool, then continue where we were; returns the block's last value: `val text = withContext(IO) { read() }` (`await Task.Run`). |
 | `Dispatchers.IO` | Thread pool for disk/network waiting. |
 | `suspend fun` | Function that can pause a coroutine; callable only from a coroutine (`async Task`). |
 | `Flow<T>` | Stream of values over time (`IAsyncEnumerable`/`IObservable`); Room emits a new value on every table change. |
 | `flowOf(x)` | `Flow` that emits one fixed value (e.g. `flowOf(emptyList())` as a "nothing" branch). |
+| `flow.first { cond }` | Suspend until the flow emits a matching value, return it. |
+| `CancellationException` | Thrown inside a coroutine when it is cancelled. A general `catch (e: Exception)` would swallow it: put `catch (e: CancellationException) { throw e }` before it. |
 
 ## 4. Android platform
 
@@ -142,7 +162,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Cursor` | Result rows: `moveToNext()`, `getColumnIndexOrThrow()`, `getLong()`, `getString()`. |
 | `ContentUris.withAppendedId(base, id)` | Uri of one row (one track). |
 | `MediaStore.UNKNOWN_STRING` | `"<unknown>"`, what MediaStore returns for missing tags (not `null`). |
-| `MediaStore.Audio.Media` | System audio table: `_ID`, `TITLE`, `ARTIST`, `ALBUM`, `DURATION`, `RELATIVE_PATH`, `IS_MUSIC`. |
+| `MediaStore.Audio.Media` | System audio table: `_ID`, `TITLE`, `ARTIST`, `ALBUM`, `DURATION`, `RELATIVE_PATH`, `DISPLAY_NAME` (file name with extension), `IS_MUSIC`. Without a title tag, `TITLE` = file name without extension. |
 | `MediaStore.Audio.Media.getContentUri(VOLUME_EXTERNAL)` | Uri of the whole audio table. |
 | `android.util.Size(w, h)` | Width/height pair. |
 | `SharedPreferences` | Small private key-value storage (XML file). |
@@ -152,7 +172,14 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Manifest.permission.READ_MEDIA_AUDIO` | Runtime permission to read audio files. |
 | `ContextCompat.checkSelfPermission(...)` | Is the permission granted? Compare with `PackageManager.PERMISSION_GRANTED`. |
 | `ActivityResultContracts.RequestPermission()` | Contract for the system permission dialog. |
+| SAF (Storage Access Framework) | System file dialogs: the user picks the file or place, the app gets a `Uri` to it. No storage permission needed. |
+| `ActivityResultContracts.CreateDocument("application/json")` | "Save as" dialog; `launch("name.json")` = suggested name; result `Uri?` (`null` = cancelled). |
+| `ActivityResultContracts.OpenDocument()` | "Open file" dialog; `launch(arrayOf("application/json"))` = allowed MIME types; result `Uri?`. |
+| `contentResolver.openOutputStream(uri)` / `openInputStream(uri)` | Write / read stream for a `content://` Uri; may return `null`. Blocking, so inside `withContext(Dispatchers.IO)`. |
 | `R.drawable.name` | Generated `Int` id of a file in `res/drawable/`; not the image itself. |
+| `res/font/x.ttf` → `R.font.x` | Font resource; file names lowercase with underscores. |
+| Variable font | One file holding all weights on a `wght` axis (e.g. 300–700); static fonts are one weight per file. |
+| `colorResource(android.R.color.system_accent1_500)` | System wallpaper accent color (Android 12+). |
 | `@DrawableRes` | Marks an `Int` as a drawable id, so Android Studio flags wrong ids. |
 | Vector Asset | Android Studio: right-click `res` → New → Vector Asset, adds Material icons as XML. |
 | `Build.VERSION.SDK_INT` | Android version of the device (theme uses it). |
@@ -175,12 +202,13 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `getValue` / `setValue` imports | Needed for `by` with state. |
 | `@Stable` | Promise to Compose that changes are reported through state. |
 | `LaunchedEffect(keys) { }` | Run a coroutine when entering composition / when keys change; cancelled on leave. `Unit` key = once. |
+| `snapshotFlow { state.x }` | Turn Compose state reads into a `Flow`: the block re-runs and emits when the state it read changes. |
 | `rememberCoroutineScope()` | Scope for starting coroutines yourself, e.g. from `onClick`; cancelled when the composable leaves. |
 | `flow.collectAsState(initial)` | `Flow` → Compose `State`; recomposes on each new value. Wrap the flow in `remember { }` so it isn't recreated. |
 | `DisposableEffect(key) { ... onDispose { } }` | Effect with cleanup when leaving composition. |
 | `produceState(initial, key) { value = ... }` | Coroutine that produces state; returns `State`, read `.value`. |
 | `LocalContext.current` | Current `Context` inside a composable. |
-| `rememberLauncherForActivityResult(contract) { result -> }` | Launcher for system dialogs (permission). `launcher.launch(...)`. |
+| `rememberLauncherForActivityResult(contract) { result -> }` | Launcher for system dialogs (permission, file save/open). `launcher.launch(...)`. Must be declared after everything its lambda uses. |
 | `rememberLazyListState()` | Scroll state of a `LazyColumn`. |
 | `remember(key) { LazyListState() }` | New scroll state each time `key` changes (e.g. per opened playlist). |
 | Effect placement | Effects live as long as their composable. A tab screen leaves composition when switched away, so an effect that must always run belongs in a parent that's always composed. |
@@ -202,12 +230,15 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `items(list) { item -> }` | One row per list element inside `LazyColumn`. |
 | `LazyListState` | `layoutInfo.visibleItemsInfo` (index, size), `viewportStartOffset/EndOffset`, `animateScrollToItem(i, offset)` (suspend, animated). |
 | `listState.requestScrollToItem(i, offset)` | Not suspend: "start from item `i` on next measure". Works while the list isn't shown, with no animation. |
+| `layoutInfo.totalItemsCount` | `0` until the list has been measured with items (a fresh `LazyListState` has no layout). |
+| Item fully visible | `item.offset >= viewportStartOffset && item.offset + item.size <= viewportEndOffset`; `visibleItemsInfo` also lists items cut by the edge. |
 | `items(list, key = { it.id }) { }` | Stable key per row, so rows keep their state when the list changes. Needs `import androidx.compose.foundation.lazy.items`. |
 | `PaddingValues(bottom = 140.dp)` | Padding description (used for `contentPadding`, Scaffold `innerPadding`). |
 | `Alignment.Center`, `CenterVertically`, `CenterHorizontally`, `BottomCenter` | Alignment options. |
 | `Arrangement.SpaceBetween` | First at start, last at end, space between. |
 | `Arrangement.SpaceEvenly` | Equal gaps everywhere, including edges. |
 | `Dp`, `.dp` | Density-independent pixels: `16.dp`. |
+| `WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()` | Height of the system navigation/gesture bar as `Dp`. |
 
 ### Reorderable (`sh.calvin.reorderable`)
 | Name | Meaning |
@@ -240,8 +271,11 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Text(text, style, color, maxLines, overflow, textAlign)` | Text label. |
 | `TextOverflow.Ellipsis` | Cut overflow with "…". |
 | `TextAlign.Center` | Center text lines. |
+| `Font(R.font.x, FontWeight.Medium, FontStyle.Italic)` | One font file and the weight/style it covers. |
+| `FontFamily(Font(...), Font(...))` | One typeface in several variants; Compose picks a `Font` by weight + style. Different typefaces = different families. A variable font is listed once per weight. |
+| `TextStyle.copy(fontFamily = ...)` | Same style with one field changed (data class `copy`). |
 | `Image(bitmap, contentDescription, contentScale, modifier)` | Draw an `ImageBitmap`. `contentDescription = null` = decorative. |
-| `Icon(painter, contentDescription)` | Small tinted icon (Material 3); color comes from the surrounding component. |
+| `Icon(painter, contentDescription, tint)` | Small tinted icon (Material 3); color comes from the surrounding component unless `tint` is set, so the XML `android:tint` doesn't matter. `contentDescription` = what TalkBack reads. |
 | `painterResource(R.drawable.x)` | Load a drawable resource (e.g. vector XML) as a `Painter`. |
 | `ContentScale.Crop` | Fill the box, trim overflow, keep proportions. |
 | `ImageBitmap`, `Bitmap.asImageBitmap()` | Compose bitmap type / conversion from Android `Bitmap`. |
@@ -253,23 +287,31 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `MaterialTheme` | Provides `colorScheme` and `typography` to children. |
 | `MaterialTheme.colorScheme.primary/onSurface/surfaceVariant` | Theme colors. |
 | `MaterialTheme.typography.displayLarge/headlineMedium/headlineSmall/bodyLarge/bodyMedium/bodySmall/labelSmall` | Text styles. |
-| `YorozuyaTheme { }` | Our theme (`ui/theme`): dynamic colors on Android 12+, dark/light by system. |
+| `Typography()` | Material 3 default text styles (15 roles: display/headline/title/body/label × Large/Medium/Small); `Typography(titleLarge = ...)` overrides chosen ones. |
+| `dynamicDarkColorScheme(context)` / `dynamicLightColorScheme` | Color scheme from the wallpaper (Android 12+). |
+| `rememberDynamicColorScheme(seedColor, isDark, isAmoled)` | MaterialKolor: full scheme from one seed color. |
+| `YorozuyaTheme(theme, mode, amoled) { }` | Our theme (`ui/theme`): wallpaper colors or a MaterialKolor seed scheme, light/dark/system, optional pure black; `typography = Typography` from `Type.kt`. |
 | `Scaffold(bottomBar = { }, snackbarHost = { }) { innerPadding -> }` | Screen skeleton with slots; `innerPadding` = space bars take. |
 | `SnackbarHostState` | Holds the shown message: `showSnackbar(text, duration)` (suspend), `currentSnackbarData?.dismiss()`. |
 | `SnackbarHost(state) { data -> }` | Draws messages; optional lambda = custom look, `data.visuals.message` = text. |
 | `SnackbarDuration.Short/Long/Indefinite` | How long a message stays (Short ≈ 4 s). |
-| `NavigationBar { NavigationBarItem(selected, onClick, icon, label) }` | Bottom tab bar. `label = null` → icon only. |
+| `NavigationBar { NavigationBarItem(selected, onClick, icon, label) }` | Bottom tab bar (80dp by default, system inset included in its height). `label = null` → icon only. |
 | `Surface(color, contentColor, shape, tonalElevation)` | Background container; `contentColor` colors text inside; elevation tints color. |
+| `Surface(onClick = { }, ...)` | Tappable surface overload: ripple + "button" semantics. Children's own buttons still get their taps. |
+| `LinearProgressIndicator(progress = { 0.5f }, modifier)` | Read-only progress line; `progress` is a lambda read at draw time. |
 | `RoundedCornerShape(50)` (Int) | Corner radius in percent of the size: 50 = fully round ends (pill). With `.dp` it's a fixed radius. |
 | `colorScheme.inverseSurface/inverseOnSurface` | Contrasting colors for bubbles (dark in light theme). |
 | `TextButton(onClick = { action }) { Text(...) }` | `onClick` runs once on tap; trailing `{ }` is what's drawn, runs on every recomposition - no actions there. |
 | `TextButton(onClick) { }` | Flat button with content. |
-| `IconButton(onClick) { Icon(...) }` | Round tappable area for an icon. |
+| `IconButton(onClick, modifier = Modifier.size(64.dp)) { Icon(..., modifier = Modifier.size(48.dp)) }` | Round tappable area (48dp by default) for an icon; size on the button = touch area, on the icon = picture. |
 | `AlertDialog(onDismissRequest, title, text, confirmButton, dismissButton)` | Compose dialog (`androidx.compose.material3`, **not** `android.app.AlertDialog`). |
 | `OutlinedTextField(value, onValueChange, singleLine, placeholder)` | Text input with outline; `value` comes from state, `onValueChange = { name = it }`. |
 | `TextButton(onClick, enabled = cond)` | Disabled (grey, not tappable) when `enabled` is false. |
 | `Slider(value, onValueChange, onValueChangeFinished)` | Draggable 0..1 bar. |
 | `Checkbox(checked, onCheckedChange)` | Checkbox. |
+| `RadioButton(selected, onClick)` | One-of-many choice. |
+| `Switch(checked, onCheckedChange)` | On/off toggle. |
+| `SingleChoiceSegmentedButtonRow { SegmentedButton(selected, onClick, shape = SegmentedButtonDefaults.itemShape(i, n)) { } }` | Connected row of options, one selected. |
 | `HorizontalDivider()` | Horizontal line. |
 
 ## 10. Media3 (playback)
@@ -331,6 +373,14 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `room3 { schemaDirectory(...) }` | Export table layout to JSON (commit it; used for migrations). |
 | Function returning `Flow<T>` | Observable query, not `suspend`. One-off reads/writes are `suspend`. |
 
+### kotlinx.serialization (JSON)
+| Name | Meaning |
+|---|---|
+| `@Serializable data class X(...)` | Compiler plugin generates conversion to/from JSON for this class. |
+| `Json { encodeDefaults = true; ignoreUnknownKeys = true; prettyPrint = true }` | Configured instance. **By default a field equal to its default value is not written**; `ignoreUnknownKeys` = don't fail on fields from a newer format. |
+| `json.encodeToString(obj)` / `json.decodeFromString<X>(text)` | Object → JSON text / back. |
+| `import kotlinx.serialization.json.Json` | `Json` is in its own package (JSON is one of several formats). |
+
 ## 12. Gradle
 
 | Name | Meaning |
@@ -338,29 +388,31 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `gradle/libs.versions.toml` | Version catalog: `[versions]` and `[libraries]` aliases, used as `libs.xxx` in build files. |
 | `app/build.gradle.kts` | App module build script; `dependencies { implementation(...) }`. |
 | `platform(libs.androidx.compose.bom)` | Compose BOM: supplies one matching set of versions, so Compose libraries are listed without versions. Never remove it. |
-| Gradle sync | Android Studio re-reads build files (elephant icon / "Sync Now"). |
+| Gradle sync | Android Studio re-reads build files (elephant icon / "Sync Now"). Needed after every build file change: Gradle in the terminal may build fine while the IDE still shows "Unresolved reference". |
 | `group:artifact:version` | Maven coordinate; group becomes the folder path on the repository (`androidx.room3` → `androidx/room3/`). |
 | `[plugins]` + `alias(libs.plugins.x)` | Gradle plugin from the catalog; `apply false` in the root file, applied in `app`. |
 | KSP, `ksp(libs.x)` | Kotlin Symbol Processing: generates code from annotations at build time (Room). |
+| `org.jetbrains.kotlin.plugin.serialization` | kotlinx.serialization compiler plugin; `version.ref = "kotlin"` (must match Kotlin, like `kotlin-compose`). |
 
 ## 13. Project code
 
 | File | Item | Purpose |
 |---|---|---|
-| `Track.kt` | `data class Track(id, uri, title, artist?, album?, duration, relativePath)` | One song from MediaStore. |
+| `Track.kt` | `data class Track(id, uri, title, artist?, album?, duration, relativePath, fileName)` | One song from MediaStore; `relativePath` + `fileName` identify the file across devices. |
 | `TrackLoader.kt` | `loadTracks(context): List<Track>` | Query MediaStore for music. |
 | `Tabs.kt` | `enum class Tab(label, icon)` | `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`; icon = `R.drawable.ic_*`. |
-| `MainActivity.kt` | `MainActivity` | Entry point; `setContent { YorozuyaTheme { AppScaffold() } }`. |
-| | `AppScaffold()` | Root UI: tabs, permission, `allTracks`, `player`, `listState` + auto-scroll effect, `library`, filtered `tracks`, snackbar + `showMessage`, `favoriteIds`, `toggleFavorite(id)`, `actionTrack` + `TrackActionsDialog`, `playlists`, `openedList`, `openedTracks`. |
-| `QueueScreen.kt` | `QueueScreen(player, tracks, currentTrack, hasPermission, listState, showMessage, onTrackLongClick)` | Queue tab: buttons, (already filtered) list, mini player. Auto-scroll lives in `AppScaffold`. |
+| `MainActivity.kt` | `MainActivity` | Entry point; `rememberThemeSettings()` + `YorozuyaTheme(theme, mode, amoled) { AppScaffold(themeSettings) }`. |
+| | `AppScaffold(themeSettings)` | Root UI: tabs, permission, `allTracks`, `player`, `listState` + auto-scroll effect (also for `detailListState`), `library`, filtered `tracks`, snackbar + `showMessage`, `favoriteIds`, `toggleFavorite(id)`, `actionTrack` + `TrackActionsDialog`, `playlists`, `countsById` / `favoritesCount` (only tracks in the library), `openedList`, `openedTracks`, `importLauncher` / `exportLauncher`; `bottomBar` = mini player + `NavigationBar`. |
+| `QueueScreen.kt` | `QueueScreen(player, tracks, hasPermission, listState, showMessage, onTrackLongClick)` | Queue tab: shuffle/repeat buttons, (already filtered) list. Auto-scroll lives in `AppScaffold`. |
 | `FavoriteScreen.kt` | `FavoriteScreen(player, tracks, listState)` | Old favorites list, no longer used (replaced by `PlaylistDetailScreen`). |
 | | `Placeholder(name)` | Stub screen for unfinished tabs. |
-| `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick, onTrackLongClick?, bottomPadding)` | Scrollable track list; `bottomPadding` = space under the last item. |
+| `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick, onTrackLongClick?, bottomPadding)` | Scrollable track list; `bottomPadding` is unused now. |
 | | `TrackRow(track, isCurrent, isPlaying, onClick, onLongClick?, dragHandle?)` | One row: cover + title/artist (+ optional drag handle at the end); tap + long press. |
+| | `LazyListState.centerOn(index, animate)` | Scroll so the item is centered; no-op if fully visible. Used for Queue and the opened playlist. |
 | `ReorderableTrackList.kt` | `ReorderableTrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick, onTrackLongClick, onMove, onDragEnd)` | Track list with drag handles; reports moves, owns no order itself. |
-| `NowPlayingBar.kt` | `NowPlayingBar(track, isPlaying, on...Click, player)` | Mini player: seek bar, cover, title, prev/play/next. |
+| `NowPlayingBar.kt` | `NowPlayingBar(track, isPlaying, onPlayPauseClick, onPreviousClick, onNextClick, onClick, player)` | Mini player in `bottomBar`: thin progress line, cover, title, prev/play/next icons; tap opens "Now". Hidden on the "Now" tab. |
 | | `formatTime(ms)` | `83500` → `"1:23"`. |
-| `SeekBar.kt` | `PlayerSeekBar(player, modifier)` | Slider + time labels with own drag state; used by mini player and "Now" tab. |
+| `SeekBar.kt` | `PlayerSeekBar(player, modifier)` | Slider + monospace time labels with own drag state; "Now" tab only. |
 | `NowPlayingScreen.kt` | `NowPlayingScreen(player, track?, showMessage, isFavorite, onToggleFavorite)` | "Now" tab: big cover, info, favorite button, slider, all controls. |
 | `Artwork.kt` | `rememberArtwork(uri, sizePx): ImageBitmap?` | Load embedded cover off the main thread. |
 | | `ArtworkThumb(uri, size, sizePx, modifier)` | Small rounded cover with "♪" fallback. |
@@ -382,14 +434,23 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | | `saveState()` / `restoreState(player)` | Persist queue, index, position, shuffle, repeat in prefs `playback_state`. |
 | | `CallBack` | Session callback: allows and handles `stopCommand`. |
 | `FavoriteEntity.kt` | `FavoriteEntity(trackId, addedAt, position)` | Row of table `favorites`. |
-| `FavoriteDao.kt` | `observeIds()` (by position), `observeIdsNewestFirst()` (unused), `add(fav)`, `remove(id)`, `topPosition()`, `setPosition()`, `reorder(ids)` | Favorites queries. |
+| `FavoriteDao.kt` | `observeIds()` (by position), `observeIdsNewestFirst()` (unused), `add(fav)`, `remove(id)`, `topPosition()`, `setPosition()`, `getAll()` (for backup), `reorder(ids)` | Favorites queries. |
 | `YorozuyaDatabase.kt` | `YorozuyaDatabase.get(context)` | Singleton Room database `yorozuya.db` (version 3). |
 | `PlaylistEntity.kt` | `PlaylistEntity(id, name, createdAt)` | Row of table `playlists`. |
 | `PlaylistTrackEntity.kt` | `PlaylistTrackEntity(playlistId, trackId, position)` | Row of table `playlist_tracks`; cascade-deleted with its playlist. |
-| `PlaylistDao.kt` | `observePlaylists()`, `createPlaylist()`, `deletePlaylist(id)`, `observeTrackIds(id)`, `topPosition(id)`, `addTrack(): Boolean`, `removeTrack()`, `observeCounts()`, `rename()`, `setPosition()`, `reorder(id, ids)` | Playlist queries. |
+| `PlaylistDao.kt` | `observePlaylists()`, `createPlaylist()`, `deletePlaylist(id)`, `observeTrackIds(id)`, `topPosition(id)`, `bottomPosition(id)`, `insertTrack(row)`, `addTrack(): Boolean`, `removeTrack()`, `observeAllTracks()`, `rename()`, `getAllPlaylists()`, `getTrackIds(id)`, `setPosition()`, `reorder(id, ids)` | Playlist queries. |
 | `PlaylistTarget.kt` | `sealed interface PlaylistTarget { Favorites, Custom(id) }` | Which list is opened on the Playlists tab. |
-| `PlaylistsScreen.kt` | `PlaylistsScreen(playlists, favoritesCount, onOpen, onCreate, counts)` | Playlists tab: Favorites + playlists with track counts + "New Playlist" dialog. |
+| `PlaylistsScreen.kt` | `PlaylistsScreen(playlists, favoritesCount, onOpen, onCreate, counts, onImport, onExport)` | Playlists tab: header with import/export buttons, Favorites + playlists with track counts + "New Playlist" dialog. |
 | | `PlaylistNameDialog(title, confirmLabel, initialName, onConfirm, onDismiss)` | Name input dialog, shared by create and rename. |
 | `PlaylistDetailScreen.kt` | `PlaylistDetailScreen(title, tracks, player, listState, onBack, onDelete?, onRemoveTrack, onRename?, onReorder?)` | Opened playlist: header with back/rename/delete, reorderable track list, `BackHandler`, long press → remove dialog. |
 | `TrackActionsDialog.kt` | `TrackActionsDialog(track, isFavorite, playlists, onToggleFavorite, onAddTo, onDismiss)` | Long-press menu: favorite toggle + "Add to <playlist>". |
+| `Backup.kt` | `BackupFile`, `BackupTrackRef`, `BackupPlaylist`, `BACKUP_VERSION`, `backupJson` | Backup file format (JSON) and its `Json` settings. |
+| | `Track.toRef()`, `buildBackup(favoriteDao, playlistDao, tracksById)` | Database → `BackupFile`; ids missing from the library are skipped. |
+| | `TrackMatcher(library).find(ref)` | Backup entry → current `Track?`: folder + name, then name alone, then tags (unique match only). |
+| | `restoreBackup(backup, favoriteDao, playlistDao, library): RestoreResult(matched, missing, playlists)` | Merge a backup in: favorites on top, same-named playlists extended at the end. |
+| `ui/theme/AppTheme.kt` | `enum AppTheme(label, seed?)`, `enum ThemeMode(label)` | Palettes (Wallpaper, Silver, Crimson, Forest) and light/dark/system. |
+| `ui/theme/ThemeSettings.kt` | `ThemeSettings(prefs)`: `theme`, `mode`, `amoled`, `updateTheme()`, `updateMode()`, `toggleAmoled()`; `rememberThemeSettings()` | Theme choice saved in prefs `theme`. |
+| `ui/theme/ThemePickerScreen.kt` | `ThemePickerScreen(settings)` | Theme/mode/AMOLED picker; temporarily on the "Get" tab. |
+| `ui/theme/Type.kt` | `SpaceGroteskFamily`, `BogleFamily`, `JetBrainsMonoFamily`, `Typography` | Fonts: Bogle for display/headline, Space Grotesk for the rest, JetBrains Mono for time labels. |
 | Prefs `library` | `paths` (string set), `subfolders` (bool) | Folder filter, read/written by `LibraryFilter`. |
+| Prefs `theme` | `theme`, `mode` (enum names), `amoled` (bool) | Written by `ThemeSettings`. |

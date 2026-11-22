@@ -203,6 +203,8 @@ fun AppScaffold(themeSettings: ThemeSettings) {
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
 
+        // Without the library nothing can be matched: every track would count as "not found"
+        // and the playlists would be created empty
         if (allTracks.isEmpty()) {
             showMessage("Library is not loaded yet")
             return@rememberLauncherForActivityResult

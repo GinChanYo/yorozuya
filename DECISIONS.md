@@ -12,7 +12,9 @@ Motivation: Namida met all needs, but updated rarely and some features broke. Wa
 
 * Kotlin + Jetpack Compose
 * Media3 (ExoPlayer) — playback, queue, shuffle, background service
-* Room — albums, playlists, metadata overrides
+* Room — favorites, playlists, metadata overrides
+* kotlinx.serialization — backup file (JSON)
+* MaterialKolor — color themes from one seed color
 * Coil 3 — album art (requires a separate `coil-network-okhttp` artifact)
 * youtubedl-android — downloading from YouTube
 * LRCLIB — synchronized lyrics
@@ -42,6 +44,27 @@ Bad metadata is fixed by writing to Room (track ID + corrected fields) rather th
 3. Network (MusicBrainz → MBID → Cover Art Archive)
 
 MusicBrainz requires a meaningful User-Agent with the app name and repository link.
+
+### Typography: one main typeface, one accent, one monospace
+
+Space Grotesk for all title/body/label roles, Bogle only for display/headline, JetBrains Mono for time labels. Four typefaces were tried first and looked random together; roles differ by size and weight, as Material intends. Space Grotesk is a variable font, so one file gives real Regular/Medium/Bold instead of faked bold. Monospace for timestamps: in a proportional font "1" is narrower than "8", so a ticking label jumps in width.
+
+### Mini player in `Scaffold`'s `bottomBar`
+
+The mini player sits in `bottomBar` above `NavigationBar`, not on top of a screen. `Scaffold` then adds its height to `innerPadding`, so no screen needs a manual bottom padding, and the bar is on every tab except "Now" (which has the full controls). It shows only a thin progress line; seeking is done on "Now".
+
+### Backup: what is saved and how tracks are found again
+
+* **Content:** Favorites and playlists with their order. Theme and folder filter are not included — they take a minute to set again by hand.
+* **Track identity:** MediaStore ids are assigned anew on every phone, so each track is saved as folder + file name + title/artist/duration. On restore: folder + file name → file name alone → tags (title + artist + duration in seconds). The last two accept only a single candidate: skipping a track is better than restoring the wrong one.
+* **No 4th rule (same folder + exact duration).** It only covers "renamed an untagged file" (MediaStore puts the file name into `TITLE` when there is no tag, so name and "tag" change together) and adds another way to match the wrong file. The real fix is the metadata override table: with real tags the third rule works.
+* **Where the file goes:** the system file dialog (SAF `CreateDocument` / `OpenDocument`), no storage permission. Not app storage — it would be deleted together with the app.
+* **Format:** JSON via kotlinx.serialization (worked with AGP 9; the fallback was the built-in `org.json`). A `version` field (`BACKUP_VERSION`) at the top so older files can still be read after the format changes; `encodeDefaults = true`, otherwise a field equal to its default — the version included — isn't written at all.
+* **Merge, not replace.** Nothing is deleted. Existing favorites are skipped, a playlist with the same name is extended at the end instead of duplicated, so importing twice changes nothing and a re-import repairs a playlist after a renamed file. Replace would need a confirmation and could still wipe data by mistake.
+
+### Rows for missing tracks are kept
+
+When a file disappears from the library (renamed, SD card removed), its rows in `favorites` / `playlist_tracks` stay. Put the card back or rename the file back, and they work again. Only the display filters them: lists and track counts show tracks present in the library.
 
 ### GPLv3
 
@@ -88,6 +111,20 @@ The order shifted: cover art (planned for 0.3) was started right after 0.1, so i
 * Title/artist/artwork in the notification for untagged files (`MediaMetadata` on `MediaItem`)
 * Open issues from DevLog: empty filter result hint, poll loop runs while paused, `STATE_ENDED` after the last track, `loadTracks` on the main thread
 
+### Done beyond the plan
+
+From "Postponed" and IDEAS.md:
+
+* Favorites and playlists on the "Lists" tab (Room came earlier than 0.4): create, rename, delete, add/remove tracks, track counts, drag-and-drop order
+* Backup and restore of Favorites and playlists (IDEAS #12, see "Backup: what is saved and how tracks are found again")
+
+Not in any list:
+
+* Theme system: wallpaper or seed palettes, light/dark/system, AMOLED (temporary picker on the "Get" tab until a Settings screen exists)
+* Custom fonts (see "Typography")
+* Mini player on every tab, tap opens "Now"; auto-centering on the playing track in playlists too
+* Vector icons instead of emoji in player controls
+
 ## Version 0.3 — synchronized lyrics
 
 * LRCLIB search and synced display on the "Now" tab
@@ -101,4 +138,4 @@ The order shifted: cover art (planned for 0.3) was started right after 0.1, so i
 ## Postponed
 
 * YouTube downloading (0.5) — "Get" tab stays a placeholder until then
-* Playlists ("Lists" tab) — needs Room, so not before 0.4
+* Settings screen — theme picker and backup buttons move there

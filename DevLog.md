@@ -885,7 +885,7 @@ This resolves most of the "Known issues" from the previous entry (all except the
 ### Known issues / next steps
 - ~~No UI to add a track to a playlist yet (`addTrack` / `removeTrack` are unused).~~ Done in the next entry.
 - `FavoriteScreen.kt`, `favoriteTracks` and `favoriteListState` in `AppScaffold` are no longer used, since favorites open through `PlaylistDetailScreen`.
-- `PlaylistDetailScreen` shows no mini player and uses no `bottomPadding`.
+- ~~`PlaylistDetailScreen` shows no mini player and uses no `bottomPadding`.~~ Done 2026-11-22: the mini player is in `Scaffold`'s `bottomBar` on every tab.
 - The comment "Scaffold - Material screen skeleton..." in `AppScaffold` is still far above `Scaffold(`.
 - Formatting in `QueueScreen.kt`: `)` and `{` of the function body are on separate lines.
 
@@ -937,6 +937,23 @@ This resolves most of the "Known issues" from the previous entry (all except the
 - After removing a track from Favorites in the detail screen, the Now tab heart updates (same `Flow`), but no undo.
 - `FavoriteScreen.kt`, `favoriteTracks` and `favoriteListState` are still unused.
 - `TrackActionsDialog` is only reachable from Queue (the detail screen uses long press for "Remove").
+
+---
+
+## 2026-11-18 — Playlist track counts and renaming
+
+### Added: track count under each playlist
+- **`PlaylistDao.observeCounts()`:** `SELECT playlistId, COUNT(*) AS count FROM playlist_tracks GROUP BY playlistId` → `Flow<List<PlaylistCount>>`. `PlaylistCount(playlistId, count)` is a plain data class, not an `@Entity`: Room maps the result columns to its properties by name (`AS count`).
+- **`AppScaffold`:** `countsById = remember(playlistCounts) { playlistCounts.associate { it.playlistId to it.count } }`, a `Map<Long, Int>`. A playlist with no tracks has no row in the result, so the screen uses `counts[id] ?: 0`.
+- **`PlaylistsScreen`:** subtitle `"$count ${if (count == 1) "track" else "tracks"}"`.
+
+### Added: rename a playlist
+- **`PlaylistDao.rename(id, name)`:** `UPDATE playlists SET name = :name WHERE id = :playlistId`. `observePlaylists()` emits again by itself, so the header and the list update without extra code.
+- **`PlaylistDetailScreen`:** `onRename: ((String) -> Unit)?`. The edit icon (`ic_edit.xml`) is shown only when it isn't `null`, so Favorites can't be renamed.
+- **`AppScaffold`:** `onRename = if (target is PlaylistTarget.Custom) { { newName -> scope.launch { playlistDao.rename(target.id, newName) } } } else null`.
+
+### Changed: one dialog for create and rename
+- `CreatePlaylistDialog` → `PlaylistNameDialog(title, confirmLabel, initialName = "", onConfirm, onDismiss)`, no longer `private`. `remember { mutableStateOf(initialName) }` starts the field with the current name when renaming.
 
 ---
 
@@ -999,4 +1016,140 @@ This resolves most of the "Known issues" from the previous entry (all except the
 ### Known issues / next steps
 - `onReorder` is now never `null` (both list types are covered by `when`), so the `TrackList` branch in `PlaylistDetailScreen` is dead and the parameter could be non-nullable.
 - `FavoriteScreen.kt` and `FavoriteDao.observeIdsNewestFirst()` are unused.
-- No DevLog entry for 2026-11-18 (playlist track counts and renaming).
+- ~~No DevLog entry for 2026-11-18 (playlist track counts and renaming).~~ Added.
+
+---
+
+## 2026-11-21 (2) — Theme system: palettes, light/dark mode, AMOLED
+
+### Added: library MaterialKolor 6.0.0
+- `com.materialkolor:material-kolor-material3`. It builds a full Material 3 color scheme (~30 roles) from one seed color, for light and dark.
+- Kotlin bumped 2.2.10 → 2.4.21 in the same change.
+
+### Added: `ui/theme/AppTheme.kt`
+- `enum class AppTheme(label, seed: Color?)`: `DYNAMIC` ("Wallpaper", no seed), `SILVER`, `CRIMSON`, `FOREST`. A theme is only a name and one color.
+- `enum class ThemeMode(label)`: `SYSTEM`, `LIGHT`, `DARK`.
+
+### Added: `ui/theme/ThemeSettings.kt`
+- `class ThemeSettings(prefs)`: `theme`, `mode`, `amoled` are `mutableStateOf` with `private set`, like `LibraryFilter`. `updateTheme`, `updateMode`, `toggleAmoled` change the value and save all three to prefs `theme`.
+- Enums are saved by `name`. Loading: `prefs.getString(...)?.let { n -> AppTheme.entries.find { it.name == n } } ?: AppTheme.DYNAMIC`, so a missing or unknown name falls back to the default.
+- `rememberThemeSettings()` is created in `MainActivity`, above `YorozuyaTheme`, because the theme depends on it.
+
+### Changed: `YorozuyaTheme(theme, mode, amoled)`
+- Takes plain values, not `ThemeSettings`, so previews work without SharedPreferences.
+- `DYNAMIC`: `dynamicDark/LightColorScheme(context)`. The system scheme has no AMOLED option, so `scheme.copy(background = Color.Black, surface = Color.Black)`.
+- Seed themes: `rememberDynamicColorScheme(seedColor, isDark, isAmoled)` from MaterialKolor.
+- `val seed = theme.seed` first: a local `val` can be smart-cast from `Color?` to `Color`, a property of another object can't.
+
+### Added: `ui/theme/ThemePickerScreen.kt`
+- `RadioButton` rows with a color swatch (`Spacer` + `background(color, CircleShape)`); the whole row is clickable. Wallpaper shows `colorResource(android.R.color.system_accent1_500)`.
+- `SingleChoiceSegmentedButtonRow` + `SegmentedButton(shape = SegmentedButtonDefaults.itemShape(index, count))` for the mode.
+- `Switch` for AMOLED.
+- Temporarily shown on the "Get" tab (`Tab.DOWNLOADER`) until a Settings screen exists.
+
+---
+
+## 2026-11-22 — Fonts, mini player in the bottom bar, icons, centering in playlists
+
+### Added: fonts (`res/font/`, `ui/theme/Type.kt`)
+- First version: five typefaces, one per role group. Reviewed and cut down to three: four different typefaces looked random, and the static files had only one weight each, so `Bold` would be faked.
+- **`SpaceGroteskFamily`:** main typeface for title, body and label roles. `space_grotesk.ttf` is a **variable font** (`wght` 300–700): one file holds all weights. The family lists it three times, `Font(R.font.space_grotesk, FontWeight.Normal/Medium/Bold)`; each entry tells Compose which weight to request from the file.
+- **`BogleFamily`:** accent for display and headline only (static, Normal weight, which matches those roles).
+- **`JetBrainsMonoFamily`:** regular, not italic. Used for the seek bar time labels: in a proportional font "1" is narrower than "8", so the label width jumps every second.
+- `private val baseline = Typography()` + `baseline.titleLarge.copy(fontFamily = ...)` for all 15 roles: keeps Material's sizes, weights and spacing, only the font changes. `copy()` comes with every data class.
+- Removed: `outfit.ttf`, `mplusrounded1c_medium.ttf`, `jetbrainsmono_italic.ttf`.
+
+### Changed: mini player moved into `Scaffold`'s `bottomBar`
+- **Was:** `NowPlayingBar` drawn over the list inside a `Box` in `QueueScreen`, with `bottomPadding = 140.dp` so the last track could scroll out from under it. Only Queue had it.
+- **Now:** `bottomBar = { Column { if (currentTrack != null && currentTab != Tab.NOW_PLAYING) NowPlayingBar(...); NavigationBar { ... } } }`. `Scaffold` measures the whole `bottomBar` and adds its height to `innerPadding`, so no manual padding is needed and the bar is on every tab except "Now".
+- **`QueueScreen`:** `Box` and the bar removed; one `Column(modifier = modifier.fillMaxSize())`. Parameter `currentTrack` removed.
+- **`NowPlayingBar`:** `onClick: () -> Unit` → `Surface(onClick = onClick, ...)`, the Material 3 overload for tappable surfaces (ripple + "button" for TalkBack). Tap opens the "Now" tab. Inner buttons consume their own taps.
+- **`NowPlayingBar`:** `PlayerSeekBar` replaced with a thin `LinearProgressIndicator(progress = { position / duration }, Modifier.height(2.dp))`. `progress` is a lambda, read at draw time, so the 500 ms position updates redraw only the line. Seeking is done on the "Now" tab.
+
+### Changed: navigation bar height 80dp → 68dp
+- `NavigationBar(modifier = Modifier.height(68.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()))`. `NavigationBar` puts the system gesture bar inset inside its own height, so a plain `height(68.dp)` would squeeze the icons.
+
+### Added: auto-centering in playlists and Favorites
+- **`TrackList.kt`: `suspend fun LazyListState.centerOn(index, animate)`**, an **extension function**: declared outside the class, called like a method (`listState.centerOn(...)`). The Queue effect now uses it too.
+- **`AppScaffold`:** `LaunchedEffect(player.currentTrackId, openedTracks, detailListState)`. A just-opened list has a fresh `LazyListState` with no layout (viewport height 0), so it waits: `snapshotFlow { detailListState.layoutInfo.totalItemsCount }.first { it > 0 }`. `snapshotFlow` turns state reads into a `Flow`, `first { }` suspends until the condition holds.
+- Animated only if the list was already measured and the tab is shown; otherwise `requestScrollToItem`.
+
+### Changed: emoji → vector icons
+- `NowPlayingBar`, `NowPlayingScreen`: `TextButton { Text("◀◀") }` → `IconButton { Icon(painterResource(R.drawable.ic_skip_previous), contentDescription = "Previous") }`. Shuffle `ic_shuffle` / `ic_shuffle_on`, repeat `ic_repeat` / `ic_repeat_on` / `ic_repeat_one_on`.
+- Play/Pause on "Now" is bigger: `size` on `IconButton` = touch area (64dp), `size` on `Icon` = picture (48dp).
+- `TrackRow`: `"▶ title"` → a 16dp `ic_play` with `tint = titleColor` before the title.
+- `Icon` tints the vector with the current content color, so `android:tint` in the XML doesn't matter and icons follow the theme.
+
+### Bugs fixed during development
+- **One `FontFamily` with all five typefaces** (first idea): Compose picks a `Font` inside a family by weight and style, so files with the same weight would never be reached.
+- **`Font(R.font.outfit)` once for a variable font:** a `Bold` request matched the only (Normal) entry and was faked.
+- **`JetBrainsMonoFamily` declared but used nowhere;** then an unused `JetBrainsMonoFamily` import in `NowPlayingBar`, where no time is shown.
+- **`QueueScreen` half-edited:** `Box` ended up inside the `Column`, and `weight(1f)` outside `ColumnScope` doesn't compile. Then one leftover `}` → "Expecting a top level declaration".
+- **`NowPlayingBar` with `LinearProgressIndicator`:** missing `}` for the new `Column`, parameter `player` deleted together with `PlayerSeekBar`, missing `height` import, then `player = player` missing at the call site ("No value passed for parameter").
+- **Centering skipped a track cut by the screen edge:** `visibleItemsInfo` also lists partly visible items. Now the item must be fully inside `viewportStartOffset..viewportEndOffset`.
+
+### Known issues / next steps
+- `TrackList`: `bottomPadding` is passed by nobody now, and its comments still talk about 140.dp and `NowPlayingBar`. Artist `Text` has no `maxLines`/`Ellipsis` (a two-line artist makes the row taller and breaks `centerOn`'s height guess); the title has no `Ellipsis`; `items(tracks)` has no `key`.
+- `"♪"` is still a text placeholder for missing covers (`Artwork.kt`, `NowPlayingScreen.kt`).
+- Opening a playlist may show its top for one frame before jumping to the playing track.
+
+---
+
+## 2026-11-22 (2) — Backup: export and import of Favorites and playlists
+
+### Added: library `kotlinx.serialization` (JSON)
+- `libs.versions.toml`: `kotlinxSerialization = "1.13.0"`, library `kotlinx-serialization-json`, plugin `kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }`. The plugin must match the Kotlin version, like `kotlin-compose`.
+- Root `build.gradle.kts`: `alias(...) apply false`; `app`: `alias(libs.plugins.kotlin.serialization)` + `implementation(libs.kotlinx.serialization.json)`.
+- Worked with AGP 9 on the first try (the fallback was the built-in `org.json`).
+
+### Added: `Track.fileName`
+- `MediaStore.Audio.Media.DISPLAY_NAME` (`"song.mp3"`) in `projection`, read like the other columns. MediaStore ids are assigned anew on every phone, so a backup needs something that survives a move: folder + file name.
+
+### Added: `Backup.kt`
+- **Format:** `@Serializable data class BackupFile(version, exportedAt, favorites, playlists)`, `BackupTrackRef(fileName, relativePath, title, artist?, durationMs)`, `BackupPlaylist(name, createdAt, tracks)`. `const val BACKUP_VERSION = 1` is the file format version, not the app version.
+- **`val backupJson = Json { encodeDefaults = true; ignoreUnknownKeys = true; prettyPrint = true }`.** By default kotlinx.serialization **doesn't write a field equal to its default**, so `version = BACKUP_VERSION` would never reach the file, and an old file would later read as the current version. `ignoreUnknownKeys` lets this version read files from a newer one.
+- **`fun Track.toRef()`**: extension function with an expression body.
+- **`buildBackup(favoriteDao, playlistDao, tracksById)`:** `favoriteDao.getAll()` and `playlistDao.getAllPlaylists()` + `getTrackIds(id)` (new one-off `suspend` reads), each id → `tracksById[id]?.toRef()`, `mapNotNull` drops ids missing from the library. A playlist is kept even if all its tracks are gone. Order is the list order; positions themselves aren't saved.
+- **`class TrackMatcher(library)`**, three indexes built once: `associateBy { relativePath + fileName }`, `groupBy { fileName }`, `groupBy { tagKey(title, artist, duration) }`. `find(ref)` tries them in order with `?:`; the last two need `singleOrNull()` (exactly one candidate, otherwise skip — guessing wrong is worse than missing). `tagKey` lowercases and rounds duration to seconds.
+- **`restoreBackup(backup, favoriteDao, playlistDao, library): RestoreResult(matched, missing, playlists)`**, merge, nothing deleted:
+  - Favorites: `IGNORE` skips ones already there. New ones go above the existing ones in file order: `start = topPosition() - count + 1`.
+  - Playlists: an existing one with the same name is extended (oldest wins if several share a name: `distinctBy { it.name }` on a list sorted by `createdAt`). `byName.getOrPut(name) { createPlaylist(...) }` returns the id or creates the playlist. Tracks are appended from `bottomPosition(id)` (new, `COALESCE(MAX(position), -1) + 1`) with `insertTrack`, not `addTrack` (which puts a track on top). The position moves only when `insertTrack` didn't return `-1`.
+
+### Added: export and import in `AppScaffold`
+- **SAF (Storage Access Framework):** the system file dialog, no storage permission at all; the user picks the place (Downloads, cloud...).
+- **Export:** `rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> }`. `buildBackup` → `backupJson.encodeToString(...)` → `withContext(Dispatchers.IO) { (openOutputStream(uri) ?: error("Can't open file")).use { it.write(text.toByteArray()) } }`.
+- **Import:** `OpenDocument()`, launched with `arrayOf("application/json")`. `withContext(Dispatchers.IO) { openInputStream(uri).bufferedReader().use { it.readText() } }` returns the text, then `decodeFromString<BackupFile>`, `restoreBackup(..., allTracks)` (the whole library, not the folder-filtered `tracks`), message `"Restored N playlists, M tracks, K not found"`. Refuses to run while `allTracks` is empty.
+- `return@rememberLauncherForActivityResult` when `uri == null` (dialog cancelled).
+- `catch (e: CancellationException) { throw e }` before `catch (e: Exception)`: cancellation is also an `Exception` and must not be swallowed.
+- File name `"yorozuya-${LocalDate.now()}.json"`.
+- **`PlaylistsScreen`:** header `Row` with the title and two `IconButton`s (`ic_backup_restore`, `ic_backup`), callbacks `onImport` / `onExport`. The `LazyColumn` got `Modifier.weight(1f)` inside a new `Column`.
+
+### Changed: track counts show only tracks present in the library
+- **Problem:** after a file was renamed, its old id stayed in `playlist_tracks`. `COUNT(*)` said 4, the screen (`mapNotNull { tracksById[it] }`) showed 3.
+- Rows with missing ids are **kept on purpose**: put the SD card back or rename the file back, and they work again. Only the display changes.
+- `observeCounts()` / `PlaylistCount` → `observeAllTracks(): Flow<List<PlaylistTrackEntity>>`; `countsById = playlistTracks.filter { it.trackId in tracksById }.groupingBy { it.playlistId }.eachCount()`. Moved below `tracksById`.
+- Favorites: `favoriteIds.count { it in tracksById }` instead of `favoriteIds.size`.
+
+### Tested on the phone
+- Reinstall + import: everything restored (match by folder + file name).
+- Renamed a tagged file (`505`): found by tags and appended back to its playlist.
+- Renamed an untagged file (`Hunter-X-Hunter-...`): not found. MediaStore puts the file name into `TITLE` when there is no title tag, so the "tags" changed together with the name. No 4th rule (same folder + exact duration) was added: it only covers "renamed an untagged file" and adds another way to match the wrong track. The real fix is the metadata editor.
+- Import twice: no copies; counts correct.
+
+### Bugs fixed during development
+- **IDE showed `kotlinx.serialization.json` unresolved, Gradle built fine:** Android Studio hadn't synced after the dependency was added. **Sync after every change to `build.gradle.kts` / `libs.versions.toml`.**
+- **`Json` unresolved:** missing `import kotlinx.serialization.json.Json`; the three errors on its settings were follow-ups.
+- **`exportLauncher` declared above `favoriteDao`, `playlistDao`, `tracksById`:** a local can't be used before its declaration.
+- **New lines added instead of replacing the old one:** `text` was used before `val text = ...`, so the IDE auto-imported `android.R.attr.text` (an `Int`) → "Unresolved reference 'toByteArray' on receiver of type 'Int'". Then the write block was duplicated (file written twice, message shown twice). **An auto-import for a name you meant to declare yourself is a trap.**
+- **`"yorozuya-\${LocalDate.now()}.json"`:** `\$` escapes the template, the file would be literally named `${LocalDate.now()}`. No compile error, because inside the escaped string `LocalDate` is just text.
+- **Import button had `onClick = onExport`:** both are `() -> Unit`, so no compile error; the unused `onImport` parameter was grey in the IDE.
+- **Autocomplete placeholder `decodeFromString<BackupData>`** and a "Replace `BackupData`..." comment; `restoreBackup` called without `library`.
+- **Favorites imported with `position = index`:** would collide with existing positions and interleave. Shifted above the existing ones.
+- **Every import created new copies of playlists;** fixed by merging into same-named playlists (see above), which also repairs a playlist after a renamed file.
+
+### Known issues / next steps
+- Backup buttons move to the Settings screen when it exists (the launchers stay in `AppScaffold`, only `onImport` / `onExport` are passed).
+- Import is not one transaction: a crash midway leaves a partial import. Harmless with merge, can be repeated.
+- `tagKey` rounds to seconds, so 1999 ms and 2001 ms don't match. Switch to a tolerance if tracks get lost.
+- Message says "1 playlists".
+- Copies created by earlier imports have to be deleted by hand.

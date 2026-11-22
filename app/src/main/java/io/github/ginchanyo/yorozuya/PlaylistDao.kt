@@ -51,9 +51,12 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET name = :name WHERE id = :playlistId")
     suspend fun rename(playlistId: Long, name: String)
 
+    // One-off reads for backup (Backup.kt): suspend + plain List instead of Flow,
+    // because export/import needs a single snapshot, not updates over time
     @Query("SELECT * FROM playlists ORDER BY createdAt")
     suspend fun getAllPlaylists(): List<PlaylistEntity>
 
+    // Same order as observeTrackIds, so the backup keeps the playlist order
     @Query("SELECT trackId FROM playlist_tracks WHERE playlistId = :playlistId ORDER BY position")
     suspend fun getTrackIds(playlistId: Long): List<Long>
 
