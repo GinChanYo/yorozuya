@@ -28,6 +28,8 @@ fun NowPlayingBar(
     onPlayPauseClick: () -> Unit,
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
+    // Tap on the bar itself (not on its buttons) - parent switches to the "Now" tab
+    onClick: () -> Unit,
     // Only passed through to PlayerSeekBar (reads position/duration, calls seekTo)
     player: PlayerState,
     // Convention: every reusable composable accepts a modifier, so the caller can position it (e.g. align)
@@ -35,7 +37,10 @@ fun NowPlayingBar(
 ) {
     // Surface - container with background color, shape and elevation.
     // tonalElevation - in Material 3 "higher" surfaces are tinted slightly, instead of only casting a shadow
+    // onClick overload of Surface - makes the whole bar tappable, with ripple and "button" semantics for TalkBack.
+    // Buttons inside consume their own taps, so they don't trigger onClick of the bar
     Surface(
+        onClick = onClick,
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 3.dp

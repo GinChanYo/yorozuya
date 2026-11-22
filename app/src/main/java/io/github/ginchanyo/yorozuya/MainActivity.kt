@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
@@ -216,23 +217,39 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                 }
             }
         },
+        // Column - mini player stacked above the navigation bar. Scaffold measures the whole bottomBar,
+        // so innerPadding grows by the bar's height automatically and screens need no manual bottom padding
         bottomBar = {
-            NavigationBar {
-                // entries - list of all enum values in declaration order (like Enum.GetValues in C#)
-                Tab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = currentTab == tab,
-                        onClick = {currentTab = tab},
-                        // painterResource - loads the vector drawable by its id; Icon tints it with the theme color
-                        // (selected/unselected colors come from NavigationBarItem)
-                        icon = {
-                            Icon(
-                                painter = painterResource(tab.icon),
-                                contentDescription = tab.label
-                            )
-                        },
-                        label = null
+            Column {
+                // Hidden on the "Now" tab: that screen already shows the same controls
+                if (currentTrack != null && currentTab != Tab.NOW_PLAYING) {
+                    NowPlayingBar(
+                        track = currentTrack,
+                        isPlaying = player.isPlaying,
+                        onPreviousClick = { player.previous() },
+                        onNextClick = { player.next() },
+                        onPlayPauseClick = { player.togglePlayPause() },
+                        onClick = { currentTab = Tab.NOW_PLAYING },
+                        player = player
                     )
+                }
+                NavigationBar {
+                    // entries - list of all enum values in declaration order (like Enum.GetValues in C#)
+                    Tab.entries.forEach { tab ->
+                        NavigationBarItem(
+                            selected = currentTab == tab,
+                            onClick = {currentTab = tab},
+                            // painterResource - loads the vector drawable by its id; Icon tints it with the theme color
+                            // (selected/unselected colors come from NavigationBarItem)
+                            icon = {
+                                Icon(
+                                    painter = painterResource(tab.icon),
+                                    contentDescription = tab.label
+                                )
+                            },
+                            label = null
+                        )
+                    }
                 }
             }
         }
@@ -243,7 +260,6 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                 Tab.QUEUE -> QueueScreen(
                     player = player,
                     tracks = tracks,
-                    currentTrack = currentTrack,
                     hasPermission = hasPermission,
                     listState = listState,
                     showMessage = showMessage,
