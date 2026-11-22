@@ -9,6 +9,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -33,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -44,6 +49,7 @@ import io.github.ginchanyo.yorozuya.ui.theme.ThemePickerScreen
 import io.github.ginchanyo.yorozuya.ui.theme.YorozuyaTheme
 import io.github.ginchanyo.yorozuya.ui.theme.rememberThemeSettings
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
@@ -144,14 +150,7 @@ fun AppScaffold(themeSettings: ThemeSettings) {
     LaunchedEffect(player.currentTrackId, tracks) {
         val index = tracks.indexOfFirst { it.id == player.currentTrackId }
         if (index < 0) return@LaunchedEffect
-        val info = listState.layoutInfo
-        val viewportHeight = info.viewportEndOffset - info.viewportStartOffset
-        val itemHeight = info.visibleItemsInfo.firstOrNull()?.size ?: 0
-        val offset = -(viewportHeight / 2 - itemHeight / 2)
-
-        if (index in info.visibleItemsInfo.map {it.index})  return@LaunchedEffect
-        if (currentTab == Tab.QUEUE) listState.animateScrollToItem(index, offset)
-        else listState.requestScrollToItem(index, offset)
+        listState.centerOn(index, animate = currentTab == Tab.QUEUE)
     }
     val favoriteDao = remember { YorozuyaDatabase.get(context).favoriteDao() }
     val favoriteIds by remember { favoriteDao.observeIds()}.collectAsState(initial = emptyList())
@@ -190,6 +189,18 @@ fun AppScaffold(themeSettings: ThemeSettings) {
         openedTrackIds.mapNotNull { tracksById[it] }
     }
     val detailListState = remember(openedList) { LazyListState() }
+    // Same auto-scroll as Queue, for the opened playlist / Favorites. Third key: a new list state on every
+    // opened list, so opening a playlist re-runs the effect too
+    LaunchedEffect(player.currentTrackId, openedTracks, detailListState) {
+        val index = openedTracks.indexOfFirst { it.id == player.currentTrackId }
+        if (index < 0) return@LaunchedEffect
+        // Animate only if the list was already on screen; a just-opened one should simply appear in place
+        val wasMeasured = detailListState.layoutInfo.totalItemsCount > 0
+        // A fresh LazyListState has no layout yet (viewport height 0, so no center to compute).
+        // snapshotFlow turns state reads into a Flow; first { } suspends until the list is measured with items
+        snapshotFlow { detailListState.layoutInfo.totalItemsCount }.first { it > 0 }
+        detailListState.centerOn(index, animate = wasMeasured && currentTab == Tab.PLAYLISTS)
+    }
     // Scaffold - Material screen skeleton with slots (topBar, bottomBar...); innerPadding is the space
     // the bars take, so content isn't drawn under them
     Scaffold(
@@ -233,7 +244,14 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                         player = player
                     )
                 }
-                NavigationBar {
+                // Default height is 80dp. NavigationBar adds the system gesture bar inset inside its own height,
+                // so a plain height(68.dp) would squeeze the icons - add the inset on top.
+                // asPaddingValues() turns insets into dp paddings; calculateBottomPadding() - the bottom one
+                NavigationBar(
+                    modifier = Modifier.height(
+                        68.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                    )
+                ) {
                     // entries - list of all enum values in declaration order (like Enum.GetValues in C#)
                     Tab.entries.forEach { tab ->
                         NavigationBarItem(

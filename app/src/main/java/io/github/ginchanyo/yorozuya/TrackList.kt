@@ -97,3 +97,22 @@ fun TrackRow(
         }
     }
 }
+
+// Scrolls so that item `index` ends up in the middle of the viewport. Does nothing if it's already fully visible.
+// Extension function: declared outside LazyListState but called like its own method - listState.centerOn(...).
+// suspend - animateScrollToItem waits for the animation to finish, so this can only run inside a coroutine.
+// animate = false - requestScrollToItem: no animation, applied on the next measure (list off screen or just opened)
+suspend fun LazyListState.centerOn(index: Int, animate: Boolean) {
+    val info = layoutInfo
+    // visibleItemsInfo also contains items cut by the edge (e.g. last one peeking from the bottom),
+    // so check that the item is entirely inside the viewport, not just present in the list.
+    // offset - item's top edge in px from the viewport top; size - its height
+    val item = info.visibleItemsInfo.firstOrNull { it.index == index }
+    if (item != null && item.offset >= info.viewportStartOffset &&
+        item.offset + item.size <= info.viewportEndOffset) return
+    val viewportHeight = info.viewportEndOffset - info.viewportStartOffset
+    val itemHeight = info.visibleItemsInfo.firstOrNull()?.size ?: 0
+    // Negative offset - item is placed this many px below the top edge, i.e. at the center
+    val offset = -(viewportHeight / 2 - itemHeight / 2)
+    if (animate) animateScrollToItem(index, offset) else requestScrollToItem(index, offset)
+}

@@ -4,8 +4,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -17,9 +19,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 // Mini player at the bottom of the screen: title, artist and Play/Pause button.
-// Buttons only get callbacks (onPlayPauseClick...), so the parent decides what a click does - "state hoisting".
-// Exception: the seek bar gets the whole PlayerState, because PlayerSeekBar (SeekBar.kt) is shared with the "Now" tab
-// and keeps its own drag state.
+// Gets the whole PlayerState to read position/duration for the progress line.
 @Composable
 fun NowPlayingBar(
     track: Track,
@@ -30,7 +30,6 @@ fun NowPlayingBar(
     onNextClick: () -> Unit,
     // Tap on the bar itself (not on its buttons) - parent switches to the "Now" tab
     onClick: () -> Unit,
-    // Only passed through to PlayerSeekBar (reads position/duration, calls seekTo)
     player: PlayerState,
     // Convention: every reusable composable accepts a modifier, so the caller can position it (e.g. align)
     modifier: Modifier = Modifier
@@ -45,18 +44,21 @@ fun NowPlayingBar(
         color = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 3.dp
     ) {
-        // Column - seek bar (slider + time labels) on top, then the row with cover, title and buttons
-        Column{
-            // Padding comes from the caller: PlayerSeekBar has none of its own, the "Now" tab is already padded
-            PlayerSeekBar(player = player, modifier = Modifier.padding(horizontal = 16.dp))
+        // Column - progress line on top, then the row with cover, title and buttons
+        Column {
+            // Thin read-only progress line; seeking is done on the "Now" tab
+            LinearProgressIndicator(
+                progress = { if (player.duration > 0) player.position.toFloat() / player.duration else 0f },
+                modifier = Modifier.fillMaxWidth().height(2.dp)
+            )
             // Row - places children horizontally; CenterVertically aligns text and buttons on one middle line
             Row(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             )
             {
-                ArtworkThumb(uri = track.uri, size = 40.dp, sizePx = 96)
-                Spacer(modifier = Modifier.width(12.dp))
+                ArtworkThumb(uri = track.uri, size = 36.dp, sizePx = 96)
+                Spacer(modifier = Modifier.width(8.dp))
                 // weight(1f) - take all width left after other children (the button), pushing button to the right edge.
                 // Available only inside Row/Column scope, same idea as align in Box
                 Column(modifier = Modifier.weight(1f)) {
@@ -75,9 +77,9 @@ fun NowPlayingBar(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                TextButton(onClick = onPreviousClick){Text("◀◀")}
-                TextButton(onClick = onPlayPauseClick){Text(if (isPlaying)"⏸" else "▶")}
-                TextButton(onClick = onNextClick){Text("▶▶")}
+                TextButton(onClick = onPreviousClick) { Text("◀◀") }
+                TextButton(onClick = onPlayPauseClick) { Text(if (isPlaying) "⏸" else "▶") }
+                TextButton(onClick = onNextClick) { Text("▶▶") }
             }
         }
     }
