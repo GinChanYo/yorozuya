@@ -32,6 +32,7 @@ fun PlaylistsScreen(
     onOpen: (PlaylistTarget) -> Unit,
     onCreate: (String) -> Unit,
     counts: Map<Long, Int>,
+    onImport: () -> Unit,
     onExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -46,6 +47,9 @@ fun PlaylistsScreen(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f)
             )
+            IconButton(onClick = onImport) {
+                Icon(painterResource(R.drawable.ic_backup_restore), contentDescription = "Import backup")
+            }
             IconButton(onClick = onExport) {
                 Icon(painterResource(R.drawable.ic_backup), contentDescription = "Export backup")
             }

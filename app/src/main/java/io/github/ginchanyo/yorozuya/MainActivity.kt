@@ -174,11 +174,6 @@ fun AppScaffold(themeSettings: ThemeSettings) {
     }
     val playlistDao = remember { YorozuyaDatabase.get(context).playlistDao() }
     val playlists by remember { playlistDao.observePlaylists() }.collectAsState(initial = emptyList())
-    val playlistCounts by remember { playlistDao.observeCounts() }
-        .collectAsState(initial = emptyList())
-    val countsById = remember(playlistCounts){
-        playlistCounts.associate { it.playlistId to it.count}
-    }
     var openedList by remember { mutableStateOf<PlaylistTarget?>(null) }
 
     val openedTrackIds by remember(openedList) {
@@ -190,8 +185,48 @@ fun AppScaffold(themeSettings: ThemeSettings) {
     }.collectAsState(initial = emptyList())
 
     val tracksById = remember(allTracks) { allTracks.associateBy { it.id } }
+    // Counts show only tracks present in the library. Rows with missing ids stay in the database on purpose:
+    // put the SD card back or rename the file back, and they work again
+    val playlistTracks by remember { playlistDao.observeAllTracks() }.collectAsState(initial = emptyList())
+    // groupingBy { }.eachCount() - Map<key, number of items with that key> (GROUP BY ... COUNT(*) in SQL)
+    val countsById = remember(playlistTracks, tracksById) {
+        playlistTracks.filter { it.trackId in tracksById }.groupingBy { it.playlistId }.eachCount()
+    }
+    val favoritesCount = remember(favoriteIds, tracksById) { favoriteIds.count { it in tracksById } }
     val openedTracks = remember(tracksById, openedTrackIds) {
         openedTrackIds.mapNotNull { tracksById[it] }
+    }
+    // OpenDocument - system file picker; no storage permission needed, the user picks the file.
+    // The lambda gets the chosen file's Uri, or null if the dialog was cancelled
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+
+        if (allTracks.isEmpty()) {
+            showMessage("Library is not loaded yet")
+            return@rememberLauncherForActivityResult
+        }
+
+        scope.launch {
+            try {
+                // Reading a file is blocking disk work - move it off the main (UI) thread
+                val text = withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openInputStream(uri)
+                        ?: error("Can't open file")
+                    stream.bufferedReader().use { it.readText() }
+                }
+
+                val backup = backupJson.decodeFromString<BackupFile>(text)
+                val result = restoreBackup(backup, favoriteDao, playlistDao, allTracks)
+
+                showMessage("Restored ${result.playlists} playlists, ${result.matched} tracks, ${result.missing} not found")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showMessage("Import failed: ${e.message}")
+            }
+        }
     }
     // CreateDocument - system "Save as" dialog; no storage permission needed, the user picks the place.
     // The lambda gets the chosen file's Uri, or null if the dialog was cancelled
@@ -320,7 +355,7 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                 Tab.PLAYLISTS -> when (val target = openedList) {
                     null -> PlaylistsScreen(
                         playlists = playlists,
-                        favoritesCount = favoriteIds.size,
+                        favoritesCount = favoritesCount,
                         counts = countsById,
                         onOpen = { openedList = it },
                         onCreate = { name ->
@@ -329,6 +364,7 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                                 openedList = PlaylistTarget.Custom(id)
                             }
                         },
+                        onImport = {importLauncher.launch(arrayOf("application/json")) },
                         onExport = { exportLauncher.launch("yorozuya-${LocalDate.now()}.json") }
                     )
 

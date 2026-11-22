@@ -38,8 +38,15 @@ interface PlaylistDao {
     @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId and trackId = :trackId")
     suspend fun removeTrack(playlistId: Long, trackId: Long)
 
-    @Query("SELECT playlistId, COUNT(*) AS count FROM playlist_tracks GROUP BY playlistId")
-    fun observeCounts(): Flow<List<PlaylistCount>>
+    // All (playlist, track) rows. Counts are computed in Kotlin, not with COUNT(*): rows whose track is missing
+    // from the library (file renamed, SD card removed) stay in the table but must not be counted
+    @Query("SELECT * FROM playlist_tracks")
+    fun observeAllTracks(): Flow<List<PlaylistTrackEntity>>
+
+    // Mirror of topPosition: one more than the current largest position, for appending to the end.
+    // Empty playlist: MAX is NULL, COALESCE falls back to -1, so the first track gets 0
+    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlistId = :playlistId")
+    suspend fun bottomPosition(playlistId: Long): Int
 
     @Query("UPDATE playlists SET name = :name WHERE id = :playlistId")
     suspend fun rename(playlistId: Long, name: String)
@@ -62,5 +69,3 @@ interface PlaylistDao {
         }
     }
 }
-
-data class PlaylistCount(val playlistId: Long, val count: Int)
