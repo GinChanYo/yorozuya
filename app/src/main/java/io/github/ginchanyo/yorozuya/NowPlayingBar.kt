@@ -7,14 +7,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -77,9 +79,19 @@ fun NowPlayingBar(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                TextButton(onClick = onPreviousClick) { Text("◀◀") }
-                TextButton(onClick = onPlayPauseClick) { Text(if (isPlaying) "⏸" else "▶") }
-                TextButton(onClick = onNextClick) { Text("▶▶") }
+                // IconButton - round 48dp touch target with ripple; Icon tints the vector with the current content color
+                IconButton(onClick = onPreviousClick) {
+                    Icon(painterResource(R.drawable.ic_skip_previous), contentDescription = "Previous")
+                }
+                IconButton(onClick = onPlayPauseClick) {
+                    Icon(
+                        painterResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play),
+                        contentDescription = if (isPlaying) "Pause" else "Play"
+                    )
+                }
+                IconButton(onClick = onNextClick) {
+                    Icon(painterResource(R.drawable.ic_skip_next), contentDescription = "Next")
+                }
             }
         }
     }

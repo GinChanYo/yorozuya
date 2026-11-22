@@ -12,11 +12,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,29 +112,43 @@ fun NowPlayingScreen(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ){
-            // "\uD83D\uDD00" - emoji written as two UTF-16 code units (surrogate pair), because emoji don't fit in one Char
-            // Buttons show emoji, the message uses words - a bubble with just an emoji wouldn't say much
-            TextButton(onClick = {
+            // Buttons show icons, the message uses words - icon state alone is easy to misread
+            IconButton(onClick = {
                 player.toggleShuffle()
                 showMessage(if (player.shuffleEnabled) "Shuffle: on" else "Shuffle: off")
-            }){
-                Text(if (player.shuffleEnabled) "\uD83D\uDD00" else "➡")
+            }) {
+                Icon(
+                    painterResource(if (player.shuffleEnabled) R.drawable.ic_shuffle_on else R.drawable.ic_shuffle),
+                    contentDescription = "Shuffle"
+                )
             }
-            TextButton(onClick = {player.previous()}) {Text("◀◀")}
-            TextButton(onClick = {player.togglePlayPause()}) {
-                Text(if (player.isPlaying) "⏸" else "▶", style = MaterialTheme.typography.headlineMedium)
+            IconButton(onClick = { player.previous() }) {
+                Icon(painterResource(R.drawable.ic_skip_previous), contentDescription = "Previous")
             }
-            TextButton(onClick = {player.next()}) {Text("▶▶")}
-            TextButton(onClick = {
+            // Bigger main button: size on IconButton - touch area, size on Icon - the drawn picture
+            IconButton(onClick = { player.togglePlayPause() }, modifier = Modifier.size(64.dp)) {
+                Icon(
+                    painterResource(if (player.isPlaying) R.drawable.ic_pause else R.drawable.ic_play),
+                    contentDescription = if (player.isPlaying) "Pause" else "Play",
+                    modifier = Modifier.size(48.dp)
+                )
+            }
+            IconButton(onClick = { player.next() }) {
+                Icon(painterResource(R.drawable.ic_skip_next), contentDescription = "Next")
+            }
+            IconButton(onClick = {
                 player.cycleRepeat()
                 showMessage("Repeat: ${repeatModeName(player.repeatMode)}")
             }) {
-                Text(
-                    when (player.repeatMode) {
-                        Player.REPEAT_MODE_ALL -> "\uD83D\uDD01"
-                        Player.REPEAT_MODE_ONE -> "\uD83D\uDD02"
-                        else -> "↪"
-                    }
+                Icon(
+                    painterResource(
+                        when (player.repeatMode) {
+                            Player.REPEAT_MODE_ALL -> R.drawable.ic_repeat_on
+                            Player.REPEAT_MODE_ONE -> R.drawable.ic_repeat_one_on
+                            else -> R.drawable.ic_repeat
+                        }
+                    ),
+                    contentDescription = "Repeat: ${repeatModeName(player.repeatMode)}"
                 )
             }
         }
