@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
@@ -37,10 +38,14 @@ class PlayerState{
     var position by mutableStateOf(0L)
     var duration by mutableStateOf(0L)
 
+    // Stores tracks id in the real player queue order
+    var queueIds: List<Long> by mutableStateOf(emptyList())
+
     // Reads current state right after connecting, because listener only reports *future* changes:
     // without it, returning to the app showed nothing as playing until next track change
     fun syncFrom(p: Player){
         currentTrackId = p.currentMediaItem?.mediaId?.toLongOrNull()
+        queueIds = readQueueIds(p)
         isPlaying = p.isPlaying
         shuffleEnabled = p.shuffleModeEnabled
         repeatMode = p.repeatMode
@@ -85,10 +90,8 @@ class PlayerState{
     // list (e.g. All tracks) and moving items there would scramble it
     fun moveInQueue(oldOrder: List<Track>, from: Int, to: Int){
         val mc = controller ?: return
-        // "0 until n" - range 0..n-1; map turns each index into the mediaId stored in playQueue
-        val queueIds = (0 until mc.mediaItemCount).map { mc.getMediaItemAt(it).mediaId }
         // == on lists compares contents element by element (like SequenceEqual in C#)
-        if (queueIds == oldOrder.map { it.id.toString() }) {
+        if (queueIds == oldOrder.map { it.id }) {
             // moves the item inside the queue without interrupting the current track
             mc.moveMediaItem(from, to)
         }
@@ -173,6 +176,10 @@ fun rememberPlayerState(): PlayerState{
                     override fun onRepeatModeChanged(repeatMode: Int) {
                         state.repeatMode = repeatMode
                     }
+                    // Timeline is the whole queue, it activates at set, add, remove or move
+                    override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                        state.queueIds = readQueueIds(mc)
+                    }
                 })
                 state.syncFrom(mc)
                 state.controller = mc
@@ -195,3 +202,6 @@ fun repeatModeName(mode: Int): String = when (mode){
     Player.REPEAT_MODE_ONE -> "One"
     else -> "Off"
 }
+
+// "0 until n" - range 0..n-1; mapNotNull turns each index into the mediaId stored in playQueue. Elements with non-numeric mediaId are skipped
+fun readQueueIds(p: Player): List<Long> =  (0 until p.mediaItemCount).mapNotNull { p.getMediaItemAt(it).mediaId.toLongOrNull() }
