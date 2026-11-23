@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 
 
@@ -41,7 +42,7 @@ fun QueueScreen(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-
+    val isActive = source == player.activeSource
     // Column - buttons row on top, track list below it.
     // fillMaxSize - takes all space Scaffold gives (innerPadding already excludes the bottom bars)
     Column(modifier = modifier.fillMaxSize()) {
@@ -97,7 +98,8 @@ fun QueueScreen(
             // weight(1f) - list takes all height left under the buttons row
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .alpha(if (isActive) 1f else 0.5f),
             tracks = tracks,
             currentTrackId = player.currentTrackId,
             isPlaying = player.isPlaying,
