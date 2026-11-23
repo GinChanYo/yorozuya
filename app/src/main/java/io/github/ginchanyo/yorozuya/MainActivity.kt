@@ -147,16 +147,7 @@ fun AppScaffold(themeSettings: ThemeSettings) {
     var actionTrack by remember {mutableStateOf<Track?>(null)}
     // Searched in allTracks, not filtered tracks: the playing song must show even if it's outside selected folders
     val currentTrack = allTracks.firstOrNull { it.id == player.currentTrackId }
-    // Scroll list to the playing track. Two keys: re-run when track changes AND when tracks are loaded
-    // (on app return currentTrackId may arrive before the list, then index would be -1 and nothing would scroll).
-    // listState.requestScrollToItem() is ordinary not suspend function. It only remembers "on next measure start from this element"
-    // When LazyColumn will appear again, it will draw on its position without animation.
-    // Lives here, not in QueueScreen: QueueScreen isn't composed on other tabs, so its effect would miss track changes
-    LaunchedEffect(player.currentTrackId, tracks) {
-        val index = tracks.indexOfFirst { it.id == player.currentTrackId }
-        if (index < 0) return@LaunchedEffect
-        listState.centerOn(index, animate = currentTab == Tab.QUEUE)
-    }
+
     val favoriteDao = remember { YorozuyaDatabase.get(context).favoriteDao() }
     val favoriteIds by remember { favoriteDao.observeIds()}.collectAsState(initial = emptyList())
 
@@ -192,10 +183,30 @@ fun AppScaffold(themeSettings: ThemeSettings) {
     val countsById = remember(playlistTracks, tracksById) {
         playlistTracks.filter { it.trackId in tracksById }.groupingBy { it.playlistId }.eachCount()
     }
+
     val favoritesCount = remember(favoriteIds, tracksById) { favoriteIds.count { it in tracksById } }
+
     val openedTracks = remember(tracksById, openedTrackIds) {
         openedTrackIds.mapNotNull { tracksById[it] }
     }
+
+    val queueTracks = remember(tracksById, player.queueIds) {
+        player.queueIds.mapNotNull {tracksById[it]}
+    }
+
+    val queueTabTracks = if ( player.activeSource == QueueSource.Library ) queueTracks else tracks
+
+    // Scroll list to the playing track. Now effect restarts when show queue changes, not only when tracks are loaded
+    // (on app return currentTrackId may arrive before the list, then index would be -1 and nothing would scroll).
+    // listState.requestScrollToItem() is ordinary not suspend function. It only remembers "on next measure start from this element"
+    // When LazyColumn will appear again, it will draw on its position without animation.
+    // Lives here, not in QueueScreen: QueueScreen isn't composed on other tabs, so its effect would miss track changes
+    LaunchedEffect(player.currentTrackId, queueTabTracks) {
+        val index = queueTabTracks.indexOfFirst { it.id == player.currentTrackId }
+        if (index < 0) return@LaunchedEffect
+        listState.centerOn(index, animate = currentTab == Tab.QUEUE)
+    }
+
     // OpenDocument - system file picker; no storage permission needed, the user picks the file.
     // The lambda gets the chosen file's Uri, or null if the dialog was cancelled
     val importLauncher = rememberLauncherForActivityResult(
@@ -341,7 +352,7 @@ fun AppScaffold(themeSettings: ThemeSettings) {
             when (currentTab){
                 Tab.QUEUE -> QueueScreen(
                     player = player,
-                    tracks = tracks,
+                    tracks = queueTabTracks,
                     hasPermission = hasPermission,
                     listState = listState,
                     showMessage = showMessage,
