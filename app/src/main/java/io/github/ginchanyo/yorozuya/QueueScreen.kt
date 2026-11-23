@@ -65,7 +65,7 @@ fun QueueScreen(
             isPlaying = player.isPlaying,
             listState = listState,
             // Tap on the playing track - pause/resume; on another one - play current (filtered) list starting from it
-            onTrackClick = { player.playOrToggle(it, tracks) },
+            onTrackClick = { player.playOrToggle(it, tracks, QueueSource.Library) },
             onTrackLongClick = onTrackLongClick
         )
     }

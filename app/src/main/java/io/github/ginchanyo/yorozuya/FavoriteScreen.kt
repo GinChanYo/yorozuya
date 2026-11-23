@@ -26,7 +26,7 @@ fun FavoriteScreen(
         currentTrackId = player.currentTrackId,
         isPlaying = player.isPlaying,
         listState = listState,
-        onTrackClick = { player.playOrToggle(it, tracks)
+        onTrackClick = { player.playOrToggle(it, tracks, QueueSource.Favorites)
         },
         modifier = modifier.fillMaxSize()
     )

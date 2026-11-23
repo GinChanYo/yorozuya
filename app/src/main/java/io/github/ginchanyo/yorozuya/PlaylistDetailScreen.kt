@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 fun PlaylistDetailScreen(
     title: String,
     tracks: List<Track>,
+    source: QueueSource,
     player: PlayerState,
     listState: LazyListState,
     onBack: () -> Unit,
@@ -89,7 +90,7 @@ fun PlaylistDetailScreen(
                 currentTrackId = player.currentTrackId,
                 isPlaying = player.isPlaying,
                 listState = listState,
-                onTrackClick = { player.playOrToggle(it, reordered)},
+                onTrackClick = { player.playOrToggle(it, reordered, source)},
                 onTrackLongClick = {trackToRemove = it},
                 onMove = { from, to ->
                     // Before updating reordered: the check needs the old order
@@ -109,7 +110,7 @@ fun PlaylistDetailScreen(
                 currentTrackId = player.currentTrackId,
                 isPlaying = player.isPlaying,
                 listState = listState,
-                onTrackClick = { player.playOrToggle(it, tracks) },
+                onTrackClick = { player.playOrToggle(it, tracks, source) },
                 onTrackLongClick = {trackToRemove = it},
                 modifier = Modifier.weight(1f).fillMaxWidth()
             )

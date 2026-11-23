@@ -38,6 +38,8 @@ class PlayerState{
     var position by mutableStateOf(0L)
     var duration by mutableStateOf(0L)
 
+    var activeSource: QueueSource? by mutableStateOf(null)
+
     // Stores tracks id in the real player queue order
     var queueIds: List<Long> by mutableStateOf(emptyList())
 
@@ -52,7 +54,7 @@ class PlayerState{
     }
 
     // Replaces the whole queue with given tracks and starts playing from startIndex
-    fun playQueue(tracks: List<Track>, startIndex: Int){
+    fun playQueue(tracks: List<Track>, startIndex: Int, source: QueueSource){
         // "?: return" - not connected yet, nothing to control
         val mc = controller ?: return
         mc.setMediaItems(
@@ -72,6 +74,7 @@ class PlayerState{
         // prepare - start loading/decoding the file; play alone wouldn't start playback of a fresh queue
         mc.prepare()
         mc.play()
+        activeSource = source
     }
 
     fun togglePlayPause(){
@@ -80,9 +83,16 @@ class PlayerState{
     }
 
     // Tap on a track in any list: the playing one - pause/resume, another one - play queue starting from it
-    fun playOrToggle(track: Track, queue: List<Track>){
-        if (track.id == currentTrackId) togglePlayPause()
-        else playQueue(queue, queue.indexOf(track))
+    // same list that is playing - jump to the track inside the current queue, so shuffled order is kept
+    fun playOrToggle(track: Track, queue: List<Track>, source: QueueSource){
+        val queueIndex = queueIds.indexOf(track.id)
+        if (track.id == currentTrackId && source == activeSource) togglePlayPause()
+        else if (source == activeSource && queueIndex != -1){
+            val mc = controller ?: return
+            mc.seekToDefaultPosition(queueIndex)
+            mc.play()
+        }
+        else playQueue(queue, queue.indexOf(track), source)
     }
 
     // Mirrors a drag in a playlist onto the live queue, so playback follows the new order.

@@ -376,6 +376,10 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                             is PlaylistTarget.Custom -> playlists.firstOrNull { it.id == target.id }?.name ?: ""
                         },
                         tracks = openedTracks,
+                        source = when (target){
+                            PlaylistTarget.Favorites -> QueueSource.Favorites
+                            is PlaylistTarget.Custom -> QueueSource.Playlist(target.id)
+                        },
                         player = player,
                         listState = detailListState,
                         onBack = { openedList = null },
