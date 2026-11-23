@@ -194,7 +194,25 @@ fun AppScaffold(themeSettings: ThemeSettings) {
         player.queueIds.mapNotNull {tracksById[it]}
     }
 
-    val queueTabTracks = if ( player.activeSource == QueueSource.Library ) queueTracks else tracks
+
+    var queueTabSource by remember {mutableStateOf<QueueSource>(QueueSource.Library)}
+
+    val queueSourceIds by remember(queueTabSource) {
+        when (val target = queueTabSource) {
+            QueueSource.Favorites -> favoriteDao.observeIds()
+            is QueueSource.Playlist -> playlistDao.observeTrackIds(target.id)
+            QueueSource.Library -> flowOf(emptyList())
+        }
+    }.collectAsState(initial = emptyList())
+
+    val queueSourceTracks = remember(queueTabSource, tracks, queueSourceIds, tracksById){
+        if (queueTabSource == QueueSource.Library) tracks
+        else queueSourceIds.mapNotNull { tracksById[it] }
+    }
+
+    val queueTabTracks = if ( player.activeSource == queueTabSource ) queueTracks else queueSourceTracks
+
+    val queueSources = remember(playlists){ listOf(QueueSource.Library to "All songs", QueueSource.Favorites to "Favorites") + playlists.map {QueueSource.Playlist(it.id) to it.name}}
 
     // Scroll list to the playing track. Now effect restarts when show queue changes, not only when tracks are loaded
     // (on app return currentTrackId may arrive before the list, then index would be -1 and nothing would scroll).
@@ -353,6 +371,9 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                 Tab.QUEUE -> QueueScreen(
                     player = player,
                     tracks = queueTabTracks,
+                    source = queueTabSource,
+                    sources = queueSources,
+                    onSourceChange = { queueTabSource = it },
                     hasPermission = hasPermission,
                     listState = listState,
                     showMessage = showMessage,
