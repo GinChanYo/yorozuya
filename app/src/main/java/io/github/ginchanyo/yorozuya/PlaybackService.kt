@@ -13,6 +13,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -21,6 +22,8 @@ import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import android.os.Handler
+import android.os.Looper
 
 // MediaSessionService - ready template made by Google, that calls foreground-service and draws notification with buttons
 // MediaSession - wrapper above player, that makes it accessible from outside: in system, via notification bar, using Bluetooth control and etc
@@ -39,7 +42,66 @@ class PlaybackService : MediaSessionService() {
         private const val KEY_INDEX = "index"
         private const val KEY_POSITION = "position"
         private const val KEY_SHUFFLE = "shuffle"
+        private const val KEY_ORIGINAL = "original"
         private const val KEY_REPEAT = "repeat"
+    }
+
+    // 0 until n - range 0...n-1 (n excluded); map -> LINQ Select; result e.g. "12,57,103"
+    private fun readItems(p: Player): List<MediaItem> = (0 until p.mediaItemCount).map { p.getMediaItemAt(it) }
+
+    private fun idsToItems(text: String?): List<MediaItem>{
+        if (text.isNullOrEmpty()) return emptyList()
+        // Base URI of all audio files; id appended to it gives URI of one concrete track
+        val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        // mapNotNull - map, but drops nulls; toLongOrNull() returns null for broken text instead of throwing,
+        // and ?.let runs the block only when the value isn't null
+        return text.split(",").mapNotNull{
+            idText-> idText.toLongOrNull()?.let{
+                id -> MediaItem.Builder()
+                .setUri(ContentUris.withAppendedId(collection,id))
+                .setMediaId(id.toString())
+                .build()
+            }
+        }
+    }
+
+    private fun enableShuffle(p: Player){
+        if (p.mediaItemCount == 0) return
+        originalOrder = readItems(p)
+        val curIndex = p.currentMediaItemIndex
+        val currentItem =  originalOrder[curIndex]
+        val otherItems = originalOrder.filterIndexed { index, _ -> index != curIndex }.shuffled()
+        val newOrder = listOf(currentItem) + otherItems
+        replaceAround(p, newOrder, 0)
+    }
+
+    private fun disableShuffle(player: Player) {
+        val currentMediaId = player.currentMediaItem?.mediaId ?: return
+        val targetIndex = originalOrder.indexOfFirst { it.mediaId == currentMediaId }
+
+        if (targetIndex == -1) {
+            originalOrder = emptyList()
+            return
+        }
+
+        replaceAround(player, originalOrder, targetIndex)
+        originalOrder = emptyList()
+    }
+
+    // Makes the queue equal to newOrder without touching the playing item,
+    // So playback isn't interrupted. newOrder[newIndex] must be the current item
+    private fun replaceAround(p: Player, newOrder: List<MediaItem>, newIndex: Int){
+        val cur = p.currentMediaItemIndex
+
+        // Remove everything after current first: removing "before" would shift cur
+        p.removeMediaItems(cur + 1, p.mediaItemCount)
+        p.removeMediaItems(0, cur)
+        // Now the queue holds only the current item, at index 0
+
+        // Items that go before current: newOrder[0 until newIndex]
+        p.addMediaItems(0, newOrder.subList(0, newIndex))
+        // Items that go after the current: newOrder[newIndex+1 until end]
+        p.addMediaItems(newOrder.subList(newIndex + 1, newOrder.size))
     }
 
     // Saves queue (as MediaStore ids), current track index and position, so playback can resume after restart
@@ -47,10 +109,8 @@ class PlaybackService : MediaSessionService() {
         // "?: return" (Elvis operator) - if session is already null, there is nothing to save, exit the function
         val player = mediaSession?.player ?: return
         if(player.mediaItemCount == 0 ) return
-        // 0 until n - range 0...n-1 (n excluded); map -> LINQ Select; result e.g. "12,57,103"
-        val ids = (0 until player.mediaItemCount)
-            .map {player.getMediaItemAt(it).mediaId}
-            .joinToString(",")
+        val ids = readItems(player).joinToString(",") {it.mediaId}
+        val originalIds = originalOrder.joinToString(",") {it.mediaId}
 
         // edit() opens a batch of changes; apply() writes them to disk asynchronously (commit() would block)
         prefs.edit()
@@ -58,6 +118,7 @@ class PlaybackService : MediaSessionService() {
             .putInt(KEY_INDEX, player.currentMediaItemIndex)
             .putLong(KEY_POSITION, player.currentPosition)
             .putBoolean(KEY_SHUFFLE, player.shuffleModeEnabled)
+            .putString(KEY_ORIGINAL, originalIds)
             .putInt(KEY_REPEAT, player.repeatMode)
             .apply()
     }
@@ -66,31 +127,27 @@ class PlaybackService : MediaSessionService() {
     private fun restoreState(player : Player){
         // null is the default value if key doesn't exist yet (first launch)
         val saved = prefs.getString(KEY_QUEUE, null)
+
         player.shuffleModeEnabled = prefs.getBoolean(KEY_SHUFFLE, false)
         player.repeatMode = prefs.getInt(KEY_REPEAT, Player.REPEAT_MODE_OFF)
-        if (saved.isNullOrEmpty()) return
 
-        // Base URI of all audio files; id appended to it gives URI of one concrete track
-        val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
-        // mapNotNull - map, but drops nulls; toLongOrNull() returns null for broken text instead of throwing,
-        // and ?.let runs the block only when the value isn't null
-        val items = saved.split(",").mapNotNull{
-            idText-> idText.toLongOrNull()?.let{
-                id -> MediaItem.Builder()
-                    .setUri(ContentUris.withAppendedId(collection,id))
-                    .setMediaId(id.toString())
-                    .build()
-            }
-        }
+        val items = idsToItems(saved)
         if (items.isEmpty()) return
 
         player.setMediaItems(items, prefs.getInt(KEY_INDEX, 0), prefs.getLong(KEY_POSITION, 0L))
+        originalOrder = idsToItems(prefs.getString(KEY_ORIGINAL, null))
         player.prepare()
     }
 
     // Custom command for the "Close" button. Its name (customAction) is how we recognize it in onCustomCommand
     private val stopCommand = SessionCommand("ACTION_STOP", Bundle.EMPTY)
     private var mediaSession: MediaSession? = null
+    // Keeps users' track order to restore after turning off shuffle
+    private var originalOrder: List<MediaItem> = emptyList()
+
+    // Handler bound to the main thread's message queue
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     override fun onCreate() {
         super.onCreate()
         val audioAttributes = AudioAttributes.Builder()
@@ -100,6 +157,7 @@ class PlaybackService : MediaSessionService() {
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
+
         val player = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttributes, /*  handleAudioFocus = */ true)
             //  handleAudioFocus = true makes ExoPlayer manage audio focus for you.
@@ -108,8 +166,13 @@ class PlaybackService : MediaSessionService() {
             // setHandleAudioBecomingNoisy(true) pauses playback when headphones are unplugged or Bluetooth disconnects.
             // Without it, the music would suddenly come out of the speaker.
             .build()
+
+        // Exoplayer always plays by list order, and shuffle is done by hand, manually replacing queue. Otherwise, there will be double shuffle
+        player.setShuffleOrder(ShuffleOrder.UnshuffledShuffleOrder(0))
+
         // Intent - "message" describing what to open: here MainActivity
         val intent = Intent(this, MainActivity::class.java)
+
         // PendingIntent - Intent wrapped so the system (notification) can fire it later on our behalf
         // FLAG_IMMUTABLE is required since Android 12; FLAG_UPDATE_CURRENT reuses existing one, updating its data
         // "or" - bitwise OR in Kotlin (| in C#)
@@ -117,6 +180,7 @@ class PlaybackService : MediaSessionService() {
             this, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+
         // Notification button: stop icon + label; pressing it sends stopCommand to the session
         val stopButton = CommandButton.Builder(CommandButton.ICON_STOP)
             .setDisplayName("Close")
@@ -133,7 +197,8 @@ class PlaybackService : MediaSessionService() {
 
         // SharedPreferences - small key-value storage in a private XML file; MODE_PRIVATE - only our app can read it
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-
+        // This call must be before listener, otherwise the listener would receive the restored shuffle-on event, reshuffle the restored queue and overwrite originalOrder
+        restoreState(player)
         // object : Player.Listener { } - anonymous object implementing interface (like anonymous class in Java)
         // Save on track change and on play/pause, so position is fresh even if process gets killed
         player.addListener(object : Player.Listener{
@@ -146,14 +211,20 @@ class PlaybackService : MediaSessionService() {
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                saveState()
+                mainHandler.post {
+                    if (player.shuffleModeEnabled) {
+                        enableShuffle(player)
+                    } else {
+                        disableShuffle(player)
+                    }
+                    saveState()
+                }
             }
 
             override fun onRepeatModeChanged(repeatMode: Int) {
                 saveState()
             }
         })
-        restoreState(player)
     }
 
     // inner class - nested class that holds reference to outer PlaybackService, so it can use stopCommand and stopSelf()
@@ -208,4 +279,3 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 }
-
