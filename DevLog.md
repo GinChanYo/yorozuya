@@ -1153,3 +1153,71 @@ This resolves most of the "Known issues" from the previous entry (all except the
 - `tagKey` rounds to seconds, so 1999 ms and 2001 ms don't match. Switch to a tolerance if tracks get lost.
 - Message says "1 playlists".
 - Copies created by earlier imports have to be deleted by hand.
+
+---
+
+## 2026-11-23 — Custom shuffle, queue source, Queue tab dropdown
+
+### Added: real queue order in `PlayerState`
+- `queueIds: List<Long>` (`mutableStateOf`), filled in `syncFrom` and in a new `onTimelineChanged` listener. The timeline is the whole queue; it changes on set, add, remove and move.
+- `readQueueIds(p)`: `(0 until p.mediaItemCount).mapNotNull { p.getMediaItemAt(it).mediaId.toLongOrNull() }`. `moveInQueue` now compares `queueIds` with `oldOrder.map { it.id }` instead of reading the queue itself.
+
+### Changed: shuffle is done by the service, not by ExoPlayer ("variant B")
+- **Why:** ExoPlayer's own shuffle only changes the *play order*; the queue stays as it was, so the UI can't show it, and a `ShuffleOrder` can't be set through `MediaController`. Wanted: see the shuffled order and get a new one on every toggle.
+- **`player.setShuffleOrder(ShuffleOrder.UnshuffledShuffleOrder(0))`** right after `build()`: ExoPlayer always plays in list order, so its shuffle doesn't stack on ours. Length 0 is fine: `cloneAndInsert` / `cloneAndClear` keep the unshuffled type when items are set or added.
+- **`enableShuffle(p)`:** `originalOrder = readItems(p)`, then `replaceAround(p, shuffledWithFirst(originalOrder, curIndex), 0)` — the current track first, the rest shuffled.
+- **`disableShuffle(p)`:** finds the current track in `originalOrder` by `mediaId`, `replaceAround(p, originalOrder, targetIndex)`, then clears `originalOrder` (also when the track isn't found).
+- **`replaceAround(p, newOrder, newIndex)`:** makes the queue equal to `newOrder` without touching the playing item: remove everything after the current one first (removing "before" would shift its index), then everything before it, then add `newOrder[0 until newIndex]` at 0 and the rest at the end. Playback isn't interrupted.
+- **`shuffledWithFirst(items, firstIndex)`:** `listOf(items[firstIndex]) + items.filterIndexed { i, _ -> i != firstIndex }.shuffled()`. Uses only its parameters, so both `enableShuffle` and `onSetMediaItems` share it.
+- **`readItems(p)`:** all `MediaItem`s of the queue. Inside the service they still have their URI (`localConfiguration`), so they can be added back; on the controller side it's stripped.
+- **`onShuffleModeEnabledChanged`:** `mainHandler.post { if (player.shuffleModeEnabled) enableShuffle(player) else disableShuffle(player); saveState() }`.
+
+### Added: original order survives a restart
+- `idsToItems(text: String?)`: the "`"12,57,103"` → `List<MediaItem>`" block moved out of `restoreState`, now used for the queue and for the original order. Returns `emptyList()` for `null`/empty.
+- `KEY_ORIGINAL = "original"`: `saveState` writes `originalOrder` ids (empty string when shuffle is off), `restoreState` reads it after `setMediaItems`.
+- `restoreState(player)` is called **before** `player.addListener(...)`: otherwise restoring `shuffleModeEnabled = true` would reach our listener, which would reshuffle the restored (already shuffled) queue and overwrite `originalOrder`.
+
+### Added: a new list started with shuffle on is shuffled right away
+- **`CallBack.onSetMediaItems`:** called when a controller does `setMediaItems`, **before** the items reach the player, and may return a different list and start index. A listener can't do this: it only sees that the queue changed, not who changed it (the user or our own `replaceAround`).
+- Shuffle off → `super.onSetMediaItems(...)` unchanged. On → `first = if (startIndex in mediaItems.indices) startIndex else 0` (`C.INDEX_UNSET` = -1 when no index was given), `originalOrder = mediaItems.toList()` (own copy), `super.onSetMediaItems(..., shuffledWithFirst(mediaItems, first), 0, startPositionMs)`. `super` is kept because the default implementation also resolves the items.
+
+### Added: `QueueSource` — which list the queue was started from
+- `QueueSource.kt`: `sealed interface QueueSource { data object Library; data object Favorites; data class Playlist(val id: Long) }`. Separate from `PlaylistTarget`: that one is "which list is opened on the Playlists tab" and has no "all songs".
+- `PlayerState.activeSource: QueueSource?`, set in `playQueue(tracks, startIndex, source)`. `playOrToggle(track, queue, source)` passes it on.
+- `PlaylistDetailScreen` got `source: QueueSource`; `AppScaffold` maps `PlaylistTarget.Favorites → QueueSource.Favorites`, `Custom(id) → Playlist(id)` with `when`, like `title`.
+
+### Changed: tap logic in `playOrToggle`
+- Same track **and** same source → pause/resume.
+- Same source and the track is in `queueIds` → `seekToDefaultPosition(queueIndex)` + `play()`: jump inside the current queue, so a shuffled order is kept instead of being rebuilt.
+- Otherwise → `playQueue(...)` (also when the track was added to the playlist after it was started and isn't in the queue).
+
+### Added: Queue tab dropdown and real queue order
+- **`AppScaffold`:** `queueTabSource` (`mutableStateOf<QueueSource>(QueueSource.Library)` — explicit type, otherwise it would be `Library` only); `queueSourceIds` from `favoriteDao.observeIds()` / `playlistDao.observeTrackIds(id)` / `flowOf(emptyList())` for Library; `queueSourceTracks` (`tracks` for Library, otherwise ids → `tracksById`); `queueTracks` = `player.queueIds` → tracks.
+- `queueTabTracks = if (player.activeSource == queueTabSource) queueTracks else queueSourceTracks`: the playing list shows the real (maybe shuffled) queue, any other list its own order.
+- `queueSources`: `listOf(Library to "All songs", Favorites to "Favorites") + playlists.map { Playlist(it.id) to it.name }`, `remember(playlists)`.
+- Auto-scroll `LaunchedEffect` moved below and keyed on `queueTabTracks`, so it finds the playing track in the list actually shown.
+- **`QueueScreen(..., source, sources, onSourceChange, ...)`:** `Box { TextButton { Text(name of source) }; DropdownMenu(expanded, onDismissRequest) { sources.forEach { (src, name) -> DropdownMenuItem(...) } } }` first in the buttons row. `DropdownMenu` is positioned relative to its parent, hence the shared `Box`. Taps play from `source`.
+- **Dimmed inactive list:** `isActive = source == player.activeSource`, `TrackList` modifier `.alpha(if (isActive) 1f else 0.5f)`.
+
+### Bugs fixed during development
+- **Crash on toggling shuffle** (`IllegalStateException` in `PlayerInfo$Builder.build` from `MediaSessionImpl$PlayerListener.onTimelineChanged`): the queue was changed inside the `onShuffleModeEnabledChanged` callback. ExoPlayer queues events raised during a dispatch, so `MediaSession` got an intermediate timeline while reading the final current index → index out of range. Fixed by `Handler(Looper.getMainLooper()).post { }`: run after the current dispatch finishes. Inside, `player.shuffleModeEnabled` is read instead of the parameter, which may be stale after a quick double tap.
+- **Original order lost after a restart:** `originalOrder` lived only in memory; after a restart `disableShuffle` found nothing and the queue stayed shuffled. Saved under `KEY_ORIGINAL`.
+- **`if (shuffleModeEnabled = true)`:** assignment isn't an expression in Kotlin (and parameters are read-only), so it doesn't compile — unlike C++, where it would silently always be true.
+- **`originalOrder = emptyList()` before `replaceAround`** in `disableShuffle`: `subList` on an empty list → `IndexOutOfBoundsException`. Clearing moved after it and into the "not found" branch.
+- **`onSetMediaItems` returned the original list:** first the arguments weren't replaced, then `originalOrder` + `first` were passed — both meant "play in order". Must be `shuffledWithFirst(...)` and `0`.
+- **`prefs.getString(KEY_ORIGINAL)`** without the default: Java methods have no default arguments in Kotlin.
+- **Same song tapped in another list only paused:** the first branch checked only the track id. Now it also requires the same source, so the other list starts.
+- **`remember` inside `LaunchedEffect`:** "@Composable invocations can only happen from the context of a @Composable function" — the effect's body is a coroutine, not a composable.
+- **Python-style `x if cond`** and `if (a): 1f, else 0.5f` — Kotlin's form is `if (cond) a else b`, `else` required.
+- **Queue tab got `queueTracks` instead of `queueTabTracks`:** empty tab before anything plays, and a playing playlist shown (and replayed) as "All songs".
+- **`QueueSource.Playlist(player.currentTrackId?)`:** a track id instead of a playlist id; the screen didn't know its source at all, it's now a parameter.
+- **Reformat Code on the whole file** wrapped every line over 100 chars; hard wrap set to 120 in the project code style, unrelated changes rolled back.
+
+### Known issues / next steps
+- `activeSource` lives only in the UI's memory: after a restart it's `null`, every list looks inactive, and the first tap on the playing song restarts it. Should be saved (e.g. by the service, next to the queue).
+- If the playlist selected in the dropdown is deleted, the Queue tab shows an empty button and an empty list. Fall back to "All songs".
+- A track that appears twice in a queue: `indexOf` / `indexOfFirst` find the first one (`disableShuffle`, tap-to-seek).
+- `replaceAround` makes four queue changes, each one a timeline event (UI updates, `saveState` calls). `replaceMediaItems` could cut it down.
+- Items added to the queue while shuffle is on are lost when shuffle is turned off (`originalOrder` doesn't know about them). Not possible from the UI yet.
+- `FavoriteScreen.kt` is dead code (still).
+- The dropdown starts at "All songs" each time, not at the playing list.

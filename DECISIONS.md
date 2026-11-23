@@ -66,6 +66,19 @@ The mini player sits in `bottomBar` above `NavigationBar`, not on top of a scree
 
 When a file disappears from the library (renamed, SD card removed), its rows in `favorites` / `playlist_tracks` stay. Put the card back or rename the file back, and they work again. Only the display filters them: lists and track counts show tracks present in the library.
 
+### Shuffle reorders the real queue (in the service)
+
+ExoPlayer's built-in shuffle changes only the play order, not the queue, so the UI can't show it, and a custom `ShuffleOrder` can't be set through `MediaController`. Instead, ExoPlayer's shuffle is neutralized (`UnshuffledShuffleOrder`) and `PlaybackService` reorders the queue itself:
+
+* On: current track first, the rest shuffled; a new order on every toggle.
+* Off: the original order comes back without interrupting the current track. The original order is saved in prefs, so it survives a restart.
+* A new list started while shuffle is on is shuffled at once, the tapped track first (`MediaSession.Callback.onSetMediaItems`).
+* The queue is changed with `Handler.post`, never inside a player listener callback: `MediaSession` would see an inconsistent state and crash.
+
+### Queue tab: one list at a time, picked from a dropdown
+
+A dropdown at the top picks "All songs", Favorites or a playlist. The list that is playing (`QueueSource`, remembered in `PlayerState`) shows the real, possibly shuffled, queue; any other list shows its own order and is dimmed. Tapping a track in the playing list jumps to it inside the queue instead of restarting the list, so the shuffled order is kept.
+
 ### GPLv3
 
 A consequence of using certain libraries. Matches the desired outcome: open source, forks allowed, but must remain open.
@@ -124,6 +137,8 @@ Not in any list:
 * Custom fonts (see "Typography")
 * Mini player on every tab, tap opens "Now"; auto-centering on the playing track in playlists too
 * Vector icons instead of emoji in player controls
+* Shuffle that reorders the visible queue, original order restored on "off" and after a restart (see "Shuffle reorders the real queue")
+* Queue tab dropdown: All songs / Favorites / playlists, playing list shows the real queue, others dimmed (see "Queue tab: one list at a time")
 
 ## Version 0.3 — synchronized lyrics
 

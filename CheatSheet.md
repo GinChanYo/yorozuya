@@ -43,7 +43,12 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `sealed interface X { data object A : X; data class B(val id: Long) : X }` | Closed set of variants (like a discriminated union): `when` is exhaustive without `else`. `data object` = singleton with a readable `toString`. |
 | `is B ->` / `if (x is B)` | Type check + smart cast: inside, `x.id` is available without a cast. |
 | `when { cond -> ... }` | `when` without subject = if/else-if chain. |
-| `if` as expression | `val c = if (a) x else y` (no ternary operator in Kotlin). |
+| `if` as expression | `val c = if (a) x else y` (no ternary operator in Kotlin). `else` is required; Python's `x if a else y` doesn't exist. |
+| `if (x = true)` | Doesn't compile: assignment isn't an expression (in C++ it would be always true). A `Boolean` is used as is: `if (x)`. |
+| Parameters are read-only | Function parameters are always `val`; assign to a local copy instead. |
+| Early return | `if (!cond) return a` first, the main case below without nesting (like `?: return`). |
+| `val ok = a == b` | A comparison is already a `Boolean`; no `if` needed. |
+| Java method parameters | No default values from Kotlin: `prefs.getString(key, null)`, the default must be passed. |
 | `return@LaunchedEffect` | Labeled return: exit only the lambda, not the outer function. |
 | `return@rememberLauncherForActivityResult` | Same labeled return; the label is the name of the function the lambda was passed to. |
 | Extension function `fun Track.toRef() = ...` | Declared outside the class, called like its method: `track.toRef()`; inside, `this` is the `Track` (C# extension method without `static`/`this`). |
@@ -70,6 +75,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `or` | Bitwise OR (`|` in C#), e.g. combining flags. |
 | `0 until n` | Range 0..n-1. |
 | `list1 == list2` | Compares contents element by element (`SequenceEqual`), not references. |
+| `==` on `data class` / `data object` | Compares contents: `Playlist(5) == Playlist(5)` is `true`. A plain `class` compares references. |
+| Local used before declaration | Not allowed inside a function: a `val` must be declared above the code using it (move the user down). |
 | `x in coll` / `!in` | Membership test (`Contains`). |
 | `a to b` | Creates a `Pair(a, b)`. |
 | `(path, list) ->` | Destructuring in lambda params (tuple deconstruction). |
@@ -106,7 +113,12 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `sortedBy`, `sortedByDescending` | Sorted copy (`OrderBy`). |
 | `take(n)`, `joinToString(sep)` | First n items / join to string. |
 | `toSet()` | Remove duplicates. |
-| `.indices` | Range of valid indices. |
+| `.indices` | Range of valid indices; `i in list.indices` = "is `i` a valid index". |
+| `shuffled()` | Shuffled copy of a list. |
+| `filterIndexed { i, x -> }` | `filter` with the index: `filterIndexed { i, _ -> i != skip }`; `_` = unused parameter. |
+| `listA + listB` | New list, `listA` followed by `listB` (`Concat`). |
+| `subList(from, to)` | View of `[from, to)`; throws if the range is outside the list. |
+| `toList()` | Own copy of a list, so nobody else can change what you store. |
 | `isEmpty()`, `isNotEmpty()`, `isNullOrEmpty()` | Emptiness checks (last one also accepts null). |
 | `split(",")` | Split string. |
 | `lowercase()` | Lower-case copy of a string. |
@@ -184,6 +196,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | Vector Asset | Android Studio: right-click `res` → New → Vector Asset, adds Material icons as XML. |
 | `Build.VERSION.SDK_INT` | Android version of the device (theme uses it). |
 | `IOException` | I/O error (missing cover, unreadable file). |
+| `Handler(Looper.getMainLooper())` | Posts work to the main thread's message queue. `handler.post { }` runs the block a bit later, after the current work (e.g. listener dispatch) finishes (`Dispatcher.BeginInvoke`). |
+| `adb logcat -d -b crash` | Print the crash log buffer of the connected device (stack trace of the last crashes). |
 | `enableEdgeToEdge()` | Draw behind status/navigation bars. |
 | `setContent { }` | Put a Compose UI into the activity. |
 
@@ -199,6 +213,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `mutableStateOf(x)` | Observable value; writing it triggers redraw of readers. |
 | `var x by remember { mutableStateOf(...) }` | Standard pattern for local UI state. |
 | `mutableStateOf<Track?>(null)` | Explicit type when the initial value is `null` (otherwise the type would be `Nothing?`). |
+| `mutableStateOf<QueueSource>(QueueSource.Library)` | Same for a sealed type: without `<QueueSource>` the type would be `Library` only and other variants couldn't be assigned. |
+| Composable calls only in composables | `remember` etc. can't be called inside `LaunchedEffect { }` (a coroutine) or `onClick` — "@Composable invocations can only happen from the context of a @Composable function". |
 | `getValue` / `setValue` imports | Needed for `by` with state. |
 | `@Stable` | Promise to Compose that changes are reported through state. |
 | `LaunchedEffect(keys) { }` | Run a coroutine when entering composition / when keys change; cancelled on leave. `Unit` key = once. |
@@ -263,6 +279,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `background(color)` | Fill background. |
 | `clip(shape)` | Cut content to a shape. |
 | `RoundedCornerShape(4.dp)` | Rounded rectangle shape. |
+| `alpha(0.5f)` | Opacity of the whole element, `0f`–`1f` (WPF `Opacity`). `import androidx.compose.ui.draw.alpha`. `f` = `Float`; `0.5` alone is a `Double`. |
 
 ## 8. Compose UI elements
 
@@ -313,6 +330,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `Switch(checked, onCheckedChange)` | On/off toggle. |
 | `SingleChoiceSegmentedButtonRow { SegmentedButton(selected, onClick, shape = SegmentedButtonDefaults.itemShape(i, n)) { } }` | Connected row of options, one selected. |
 | `HorizontalDivider()` | Horizontal line. |
+| `Box { TextButton(onClick = { expanded = true }) { }; DropdownMenu(expanded, onDismissRequest = { expanded = false }) { DropdownMenuItem(text = { Text(..) }, onClick = { }) } }` | Popup menu. It opens next to its **parent**, so the button and the menu share one `Box`. `onDismissRequest` = tap outside. |
 
 ## 10. Media3 (playback)
 
@@ -328,7 +346,14 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `moveMediaItem(from, to)` | Move an item inside the queue; the current track keeps playing. With shuffle on, the moved item gets a new random shuffle spot. |
 | `shuffleModeEnabled`, `repeatMode` (`REPEAT_MODE_OFF/ALL/ONE`) | Modes. |
 | `C.TIME_UNSET` | Negative "unknown" duration before prepare. |
-| `Player.Listener` | `onIsPlayingChanged`, `onMediaItemTransition`, `onShuffleModeEnabledChanged`, `onRepeatModeChanged`. |
+| `Player.Listener` | `onIsPlayingChanged`, `onMediaItemTransition`, `onShuffleModeEnabledChanged`, `onRepeatModeChanged`, `onTimelineChanged` (queue set/added/removed/moved). |
+| Changing the queue inside a listener callback | Don't: events raised during dispatch are queued, `MediaSession` sees a half-updated state and crashes. Defer with `Handler.post { }`. |
+| `addMediaItems(index, items)`, `addMediaItems(items)`, `removeMediaItems(from, to)` | Insert at a position / at the end, remove `[from, to)`. Empty lists and ranges are fine. |
+| `seekToDefaultPosition(index)` | Jump to another queue item, from its start. |
+| `C.INDEX_UNSET` | `-1`: "no index given". |
+| `player.setShuffleOrder(ShuffleOrder.UnshuffledShuffleOrder(0))` | ExoPlayer-only: shuffle mode plays in list order (we reorder the queue ourselves). |
+| `MediaItem.localConfiguration` | URI etc.; present in the service's player, stripped on the `MediaController` side. |
+| `Callback.onSetMediaItems(session, controller, items, startIndex, startPositionMs)` | Runs when a controller calls `setMediaItems`, **before** the player gets the items; return other items/index via `super.onSetMediaItems(...)` or `Futures.immediateFuture(MediaItemsWithStartPosition(items, index, posMs))`. |
 | `MediaSessionService` | Foreground service base that shows the media notification; `onGetSession`. |
 | `MediaSession.Builder(ctx, player).setCallback().setMediaButtonPreferences().setSessionActivity().build()` | Makes the player controllable from outside (notification, Bluetooth, our UI). |
 | `MediaSession.Callback` | `onConnect` (allowed commands), `onCustomCommand`. |
@@ -402,8 +427,9 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `TrackLoader.kt` | `loadTracks(context): List<Track>` | Query MediaStore for music. |
 | `Tabs.kt` | `enum class Tab(label, icon)` | `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`; icon = `R.drawable.ic_*`. |
 | `MainActivity.kt` | `MainActivity` | Entry point; `rememberThemeSettings()` + `YorozuyaTheme(theme, mode, amoled) { AppScaffold(themeSettings) }`. |
-| | `AppScaffold(themeSettings)` | Root UI: tabs, permission, `allTracks`, `player`, `listState` + auto-scroll effect (also for `detailListState`), `library`, filtered `tracks`, snackbar + `showMessage`, `favoriteIds`, `toggleFavorite(id)`, `actionTrack` + `TrackActionsDialog`, `playlists`, `countsById` / `favoritesCount` (only tracks in the library), `openedList`, `openedTracks`, `importLauncher` / `exportLauncher`; `bottomBar` = mini player + `NavigationBar`. |
-| `QueueScreen.kt` | `QueueScreen(player, tracks, hasPermission, listState, showMessage, onTrackLongClick)` | Queue tab: shuffle/repeat buttons, (already filtered) list. Auto-scroll lives in `AppScaffold`. |
+| | `AppScaffold(themeSettings)` | Root UI: tabs, permission, `allTracks`, `player`, `listState` + auto-scroll effect (also for `detailListState`), `library`, filtered `tracks`, snackbar + `showMessage`, `favoriteIds`, `toggleFavorite(id)`, `actionTrack` + `TrackActionsDialog`, `playlists`, `countsById` / `favoritesCount` (only tracks in the library), `openedList`, `openedTracks`, `queueTracks` (real queue), `queueTabSource` + `queueSourceTracks` + `queueTabTracks` + `queueSources` (Queue tab dropdown), `importLauncher` / `exportLauncher`; `bottomBar` = mini player + `NavigationBar`. |
+| `QueueScreen.kt` | `QueueScreen(player, tracks, source, sources, onSourceChange, hasPermission, listState, showMessage, onTrackLongClick)` | Queue tab: list dropdown + shuffle/repeat buttons, the chosen list (real queue if it's playing, dimmed if not). Auto-scroll lives in `AppScaffold`. |
+| `QueueSource.kt` | `sealed interface QueueSource { Library, Favorites, Playlist(id) }` | Which list the queue was started from / is picked in the Queue dropdown. |
 | `FavoriteScreen.kt` | `FavoriteScreen(player, tracks, listState)` | Old favorites list, no longer used (replaced by `PlaylistDetailScreen`). |
 | | `Placeholder(name)` | Stub screen for unfinished tabs. |
 | `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick, onTrackLongClick?, bottomPadding)` | Scrollable track list; `bottomPadding` is unused now. |
@@ -422,17 +448,21 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | | `togglePath(path)`, `toggleSubfolders()` | Change the filter and save to prefs immediately. |
 | | `filter(tracks)` | Apply the filter to a track list. |
 | | `rememberLibraryFilter()` | Create once, keep across recompositions. |
-| `PlayerConnection.kt` | `class PlayerState` | UI-side playback state: `controller`, `currentTrackId`, `isPlaying`, `shuffleEnabled`, `repeatMode`, `position`, `duration`. |
+| `PlayerConnection.kt` | `class PlayerState` | UI-side playback state: `controller`, `currentTrackId`, `isPlaying`, `shuffleEnabled`, `repeatMode`, `position`, `duration`, `queueIds` (real queue order), `activeSource` (in memory only). |
 | | `syncFrom(p)` | Copy current state after connecting. |
-| | `playQueue(tracks, startIndex)` | Replace queue and play. |
-| | `playOrToggle(track, queue)` | List tap: playing track → pause/resume, other → play queue from it. |
+| | `playQueue(tracks, startIndex, source)` | Replace queue, play, remember `activeSource`. |
+| | `playOrToggle(track, queue, source)` | List tap: same track + same source → pause/resume; same source → seek inside the queue; otherwise play the list from it. |
 | | `moveInQueue(oldOrder, from, to)` | Mirror a playlist drag onto the live queue, only if the queue is exactly that playlist. |
 | | `togglePlayPause()`, `next()`, `previous()`, `seekTo(ms)`, `toggleShuffle()`, `cycleRepeat()` | Controls. |
 | | `rememberPlayerState()` | Connect to service, listen, poll position every 500 ms. |
 | | `repeatModeName(mode)` | `"Off"` / `"All"` / `"One"` for button text and messages. |
+| | `readQueueIds(p)` | Queue → list of MediaStore ids. |
 | `PlaybackService.kt` | `PlaybackService : MediaSessionService` | Owns `ExoPlayer` and `MediaSession`, notification, "Close" button. |
-| | `saveState()` / `restoreState(player)` | Persist queue, index, position, shuffle, repeat in prefs `playback_state`. |
-| | `CallBack` | Session callback: allows and handles `stopCommand`. |
+| | `saveState()` / `restoreState(player)` | Persist queue, index, position, shuffle, repeat, original order in prefs `playback_state`. `restoreState` runs before `addListener`. |
+| | `enableShuffle(p)` / `disableShuffle(p)` | Reorder the real queue / restore `originalOrder`; called via `mainHandler.post` from `onShuffleModeEnabledChanged`. |
+| | `replaceAround(p, newOrder, newIndex)` | Make the queue equal to `newOrder` without touching the playing item. |
+| | `shuffledWithFirst(items, firstIndex)`, `readItems(p)`, `idsToItems(text)` | Helpers: chosen item first + rest shuffled / queue items / `"12,57"` → items. |
+| | `CallBack` | Session callback: allows and handles `stopCommand`; `onSetMediaItems` shuffles a new list when shuffle is on. |
 | `FavoriteEntity.kt` | `FavoriteEntity(trackId, addedAt, position)` | Row of table `favorites`. |
 | `FavoriteDao.kt` | `observeIds()` (by position), `observeIdsNewestFirst()` (unused), `add(fav)`, `remove(id)`, `topPosition()`, `setPosition()`, `getAll()` (for backup), `reorder(ids)` | Favorites queries. |
 | `YorozuyaDatabase.kt` | `YorozuyaDatabase.get(context)` | Singleton Room database `yorozuya.db` (version 3). |
@@ -452,5 +482,6 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `ui/theme/ThemeSettings.kt` | `ThemeSettings(prefs)`: `theme`, `mode`, `amoled`, `updateTheme()`, `updateMode()`, `toggleAmoled()`; `rememberThemeSettings()` | Theme choice saved in prefs `theme`. |
 | `ui/theme/ThemePickerScreen.kt` | `ThemePickerScreen(settings)` | Theme/mode/AMOLED picker; temporarily on the "Get" tab. |
 | `ui/theme/Type.kt` | `SpaceGroteskFamily`, `BogleFamily`, `JetBrainsMonoFamily`, `Typography` | Fonts: Bogle for display/headline, Space Grotesk for the rest, JetBrains Mono for time labels. |
+| Prefs `playback_state` | `queue`, `index`, `position`, `shuffle`, `repeat`, `original` (ids before shuffle, empty when off) | Written by `PlaybackService`. |
 | Prefs `library` | `paths` (string set), `subfolders` (bool) | Folder filter, read/written by `LibraryFilter`. |
 | Prefs `theme` | `theme`, `mode` (enum names), `amoled` (bool) | Written by `ThemeSettings`. |
