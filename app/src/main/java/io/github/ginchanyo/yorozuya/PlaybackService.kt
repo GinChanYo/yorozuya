@@ -65,14 +65,17 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    private fun shuffledWithFirst(items: List<MediaItem>, firstIndex: Int): List<MediaItem>{
+        val currentItem =  items[firstIndex]
+        val otherItems = items.filterIndexed { index, _ -> index != firstIndex }.shuffled()
+        return listOf(currentItem) + otherItems
+    }
+
     private fun enableShuffle(p: Player){
         if (p.mediaItemCount == 0) return
         originalOrder = readItems(p)
         val curIndex = p.currentMediaItemIndex
-        val currentItem =  originalOrder[curIndex]
-        val otherItems = originalOrder.filterIndexed { index, _ -> index != curIndex }.shuffled()
-        val newOrder = listOf(currentItem) + otherItems
-        replaceAround(p, newOrder, 0)
+        replaceAround(p,shuffledWithFirst(originalOrder, curIndex), 0)
     }
 
     private fun disableShuffle(player: Player) {
@@ -261,6 +264,33 @@ class PlaybackService : MediaSessionService() {
             }
             // Unknown command - let default implementation handle it (it answers "not supported")
             return super.onCustomCommand(session, controller, customCommand, args)
+        }
+
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: List<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            if (!mediaSession.player.shuffleModeEnabled){
+                return super.onSetMediaItems(
+                    mediaSession,
+                    controller,
+                    mediaItems,
+                    startIndex,
+                    startPositionMs
+                )
+            }
+            val first = if (startIndex in mediaItems.indices) startIndex else 0
+            originalOrder = mediaItems.toList()
+            return super.onSetMediaItems(
+                mediaSession,
+                controller,
+                shuffledWithFirst(mediaItems, first),
+                0,
+                startPositionMs
+            )
         }
     }
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
