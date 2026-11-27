@@ -138,6 +138,7 @@ class PlayerState (private val prefs: SharedPreferences){
         controller?.repeatMode = next
     }
 
+    // This method is called on playlist deletion, so that after restart dropdown menu won't open on list that does not exist anymore
     fun forgetSource(source: QueueSource){
         if (source == activeSource){
             activeSource = null
