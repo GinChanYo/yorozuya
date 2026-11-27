@@ -2,6 +2,8 @@ package io.github.ginchanyo.yorozuya
 
 // ".*" - wildcard import: everything from the package (remember, mutableStateOf, DisposableEffect, getValue/setValue...)
 import android.content.ComponentName
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -25,7 +27,9 @@ import kotlin.time.Duration.Companion.milliseconds
 // @Stable - promise to Compose that changes of this object are always reported through state (mutableStateOf fields),
 // so Compose can skip redrawing composables that receive it when nothing they read has changed
 @Stable
-class PlayerState{
+class PlayerState (private val prefs: SharedPreferences){
+    companion object {private const val KEY_ACTIVE_SOURCE = "active_source"}
+
     // "by mutableStateOf" works inside a class too, not only with remember: each field is observable on its own,
     // and a composable redraws only when a field it actually reads changes.
     // No remember here - the whole object is remembered once in rememberPlayerState()
@@ -38,7 +42,8 @@ class PlayerState{
     var position by mutableStateOf(0L)
     var duration by mutableStateOf(0L)
 
-    var activeSource: QueueSource? by mutableStateOf(null)
+    // Value is loaded from prefs on object creation, and saved in playQueue
+    var activeSource: QueueSource? by mutableStateOf(queueSourceFromPrefString(prefs.getString(KEY_ACTIVE_SOURCE, null)))
 
     // Stores tracks id in the real player queue order
     var queueIds: List<Long> by mutableStateOf(emptyList())
@@ -75,6 +80,9 @@ class PlayerState{
         mc.prepare()
         mc.play()
         activeSource = source
+        prefs.edit()
+            .putString(KEY_ACTIVE_SOURCE, source.toPrefString())
+            .apply()
     }
 
     fun togglePlayPause(){
@@ -137,7 +145,7 @@ class PlayerState{
 @Composable
 fun rememberPlayerState(): PlayerState{
     val context = LocalContext.current
-    val state = remember {PlayerState()}
+    val state = remember { PlayerState(context.getSharedPreferences("ui_state", Context.MODE_PRIVATE)) }
 
     // Player has no "position changed" callback (it would fire constantly), so position is polled twice a second.
     // Keys: restart when controller connects and on play/pause, so the value is fresh right after the change.

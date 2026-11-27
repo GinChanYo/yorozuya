@@ -195,7 +195,7 @@ fun AppScaffold(themeSettings: ThemeSettings) {
     }
 
 
-    var queueTabSource by remember {mutableStateOf<QueueSource>(QueueSource.Library)}
+    var queueTabSource by remember {mutableStateOf<QueueSource>(player.activeSource ?: QueueSource.Library)}
 
     val queueSourceIds by remember(queueTabSource) {
         when (val target = queueTabSource) {
