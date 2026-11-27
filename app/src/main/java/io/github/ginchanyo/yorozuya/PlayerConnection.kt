@@ -137,6 +137,13 @@ class PlayerState (private val prefs: SharedPreferences){
         repeatMode = next
         controller?.repeatMode = next
     }
+
+    fun forgetSource(source: QueueSource){
+        if (source == activeSource){
+            activeSource = null
+            prefs.edit().remove(KEY_ACTIVE_SOURCE).apply()
+        }
+    }
 }
 
 // Compose convention: "rememberXxx()" - a composable that creates an object once, keeps it across recompositions

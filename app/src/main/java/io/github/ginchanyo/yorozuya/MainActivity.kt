@@ -419,6 +419,11 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                             {
                                 scope.launch {
                                     playlistDao.deletePlaylist(target.id)
+                                    val deleted = QueueSource.Playlist(target.id)
+                                    player.forgetSource(deleted)
+                                    if (queueTabSource == deleted){
+                                        queueTabSource = QueueSource.Library
+                                    }
                                     openedList = null
                                 }
                             }
