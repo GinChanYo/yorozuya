@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -18,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 
 
@@ -39,6 +42,7 @@ fun QueueScreen(
     // Shows a short bubble at the bottom (Snackbar in AppScaffold) - called from onClick, never from drawing code
     showMessage: (String) -> Unit,
     onTrackLongClick: (Track) -> Unit,
+    onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -48,6 +52,9 @@ fun QueueScreen(
     Column(modifier = modifier.fillMaxSize()) {
         // Row - buttons side by side in one line instead of stacked vertically
         Row(modifier = Modifier.fillMaxWidth()) {
+            IconButton(onClick = onSettingsClick){
+                Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings")
+            }
             // DropdownMenu is positioned relative to its parent, so the button and the menu share one Box
             Box {
                 TextButton(

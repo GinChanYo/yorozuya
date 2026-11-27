@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppScaffold(themeSettings: ThemeSettings) {
     var currentTab by remember { mutableStateOf(Tab.QUEUE) }
+    var showSettings by remember { mutableStateOf(false) }
     val context = LocalContext.current
     // All playback state and controls live in PlayerState (PlayerConnection.kt); here only read fields and call methods
     val player = rememberPlayerState()
@@ -348,7 +349,7 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                     Tab.entries.forEach { tab ->
                         NavigationBarItem(
                             selected = currentTab == tab,
-                            onClick = {currentTab = tab},
+                            onClick = {currentTab = tab; showSettings = false},
                             // painterResource - loads the vector drawable by its id; Icon tints it with the theme color
                             // (selected/unselected colors come from NavigationBarItem)
                             icon = {
@@ -366,7 +367,9 @@ fun AppScaffold(themeSettings: ThemeSettings) {
     ){ innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)){
             // Only the selected tab's screen is in composition; when is exhaustive over the enum, so no else needed
-            when (currentTab){
+            // Instead of the tab, settings screen can be shown
+            if (showSettings) SettingsScreen(onBack = {showSettings = false})
+            else when (currentTab){
                 Tab.QUEUE -> QueueScreen(
                     player = player,
                     tracks = queueTabTracks,
@@ -376,7 +379,8 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                     hasPermission = hasPermission,
                     listState = listState,
                     showMessage = showMessage,
-                    onTrackLongClick = { actionTrack = it}
+                    onTrackLongClick = { actionTrack = it},
+                    onSettingsClick = {showSettings = true}
                 )
                 Tab.NOW_PLAYING -> NowPlayingScreen(
                     player = player,
