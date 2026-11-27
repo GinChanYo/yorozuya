@@ -45,7 +45,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import io.github.ginchanyo.yorozuya.ui.theme.ThemeSettings
-import io.github.ginchanyo.yorozuya.ui.theme.ThemePickerScreen
 import io.github.ginchanyo.yorozuya.ui.theme.YorozuyaTheme
 import io.github.ginchanyo.yorozuya.ui.theme.rememberThemeSettings
 import kotlinx.coroutines.CancellationException
@@ -368,7 +367,7 @@ fun AppScaffold(themeSettings: ThemeSettings) {
         Box(modifier = Modifier.padding(innerPadding)){
             // Only the selected tab's screen is in composition; when is exhaustive over the enum, so no else needed
             // Instead of the tab, settings screen can be shown
-            if (showSettings) SettingsScreen(onBack = {showSettings = false})
+            if (showSettings) SettingsScreen(onBack = {showSettings = false}, themeSettings = themeSettings)
             else when (currentTab){
                 Tab.QUEUE -> QueueScreen(
                     player = player,
@@ -451,7 +450,7 @@ fun AppScaffold(themeSettings: ThemeSettings) {
                     )
                 }
                 Tab.STORAGE -> FoldersScreen(allTracks = allTracks, library = library)
-                Tab.DOWNLOADER -> ThemePickerScreen(settings = themeSettings) // TODO: temporary, move to Settings
+                Tab.DOWNLOADER -> Placeholder("Get")
             }
             actionTrack?.let { track ->
                 TrackActionsDialog(

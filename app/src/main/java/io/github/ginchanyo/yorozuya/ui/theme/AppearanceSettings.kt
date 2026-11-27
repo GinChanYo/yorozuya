@@ -24,11 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.dp
 
-// Temporary home for theme settings until a real Settings screen exists
+// Content of the "Appearance" section on the Settings screen: color theme, light/dark mode, AMOLED black.
+// No outer title or vertical padding - SettingsSection provides them; horizontal padding matches the section title
 @Composable
-fun ThemePickerScreen(settings: ThemeSettings) {
+fun AppearanceSettings(settings: ThemeSettings) {
     Column(
-        modifier = Modifier.padding(16.dp),
+        modifier = Modifier.padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text("Theme", style = MaterialTheme.typography.titleMedium)
