@@ -1221,3 +1221,75 @@ This resolves most of the "Known issues" from the previous entry (all except the
 - Items added to the queue while shuffle is on are lost when shuffle is turned off (`originalOrder` doesn't know about them). Not possible from the UI yet.
 - `FavoriteScreen.kt` is dead code (still).
 - The dropdown starts at "All songs" each time, not at the playing list.
+
+---
+
+## 2026-11-27 — Queue source survives a restart, deleted playlist fallback
+
+### Added: `QueueSource` ↔ string (`QueueSource.kt`)
+- SharedPreferences stores only primitives and strings, so a source is saved as `"library"`, `"favorites"` or `"playlist:42"`.
+- `fun QueueSource.toPrefString(): String`: extension function, `when (this)` over the sealed type without `else`. In the `is QueueSource.Playlist` branch `this` is smart-cast, so `"playlist:$id"` needs no cast.
+- `fun queueSourceFromPrefString(text: String?): QueueSource?`: `when { }` without a subject (an if/else-if chain); `"playlist:..."` → `removePrefix("playlist:").toLongOrNull()`. Returns `null` for `null`, unknown text and a broken id.
+
+### Changed: `PlayerState` remembers `activeSource`
+- `class PlayerState(private val prefs: SharedPreferences)`: primary constructor parameter that is also a private field. Prefs file `ui_state`, created in `rememberPlayerState()` inside `remember { PlayerState(context.getSharedPreferences("ui_state", Context.MODE_PRIVATE)) }`, so it's opened once, not on every recomposition. Own file, not the service's `playback_state`: two writers in one file is asking for trouble.
+- `companion object { private const val KEY_ACTIVE_SOURCE = "active_source" }`.
+- Initial value: `activeSource by mutableStateOf(queueSourceFromPrefString(prefs.getString(KEY_ACTIVE_SOURCE, null)))`. Field initializers run top to bottom and can use constructor parameters.
+- `playQueue` writes it right after `activeSource = source`: `prefs.edit().putString(KEY_ACTIVE_SOURCE, source.toPrefString()).apply()`. It's the only place `activeSource` changes.
+- **Result:** after a restart the playing list is active (not dimmed), and a tap on another track in it seeks instead of restarting the queue.
+
+### Changed: the Queue tab dropdown starts at the playing list
+- `var queueTabSource by remember { mutableStateOf<QueueSource>(player.activeSource ?: QueueSource.Library) }`. `player` is created above (`rememberPlayerState()`), so the loaded value is already there; `remember` reads it once, after that the dropdown changes on its own.
+
+### Added: a deleted playlist no longer leaves an empty dropdown
+- The only place a playlist is deleted is `onDelete` in `AppScaffold` (backup import only merges, it never deletes), so it's handled there instead of watching `playlists`.
+- `PlayerState.forgetSource(source)`: if `source == activeSource` → `activeSource = null` and `prefs.edit().remove(KEY_ACTIVE_SOURCE).apply()` (`remove` deletes the key, so `getString` returns `null` → `Library` at start). Another playlist deleted → nothing happens.
+- `onDelete`: after `playlistDao.deletePlaylist(target.id)` → `val deleted = QueueSource.Playlist(target.id)`, `player.forgetSource(deleted)`, `if (queueTabSource == deleted) queueTabSource = QueueSource.Library`. `==` on a `data class` compares fields, so a fresh `Playlist(5)` equals the stored one.
+- State is changed after a `suspend` call safely: `rememberCoroutineScope()` runs on the main thread.
+- Deleting the playing playlist doesn't stop the music (the queue lives in the player), but the queue now belongs to no list: everything on the Queue tab is dimmed and a tap starts a new queue.
+- Ids aren't reused: Room's `autoGenerate = true` creates `AUTOINCREMENT`.
+
+### Removed: `FavoriteScreen.kt`
+- Dead code since Favorites open through `PlaylistDetailScreen`.
+
+### Bugs fixed during development
+- **IDE auto-imported `PlaybackService.Companion.KEY_INDEX` etc.** while `KEY` was typed before the constant existed. They are `private` in the service → "Cannot access … it is private". Another case of "an auto-import for a name you meant to declare yourself is a trap".
+- **`remember { context.getSharedPreferences(...) }`** in `rememberPlayerState`: `state` became `SharedPreferences`, `PlayerState` wasn't created at all. The prefs must be the constructor *argument*: `remember { PlayerState(prefs...) }`.
+- **`var queueTabSource = remember { value }`** (no `mutableStateOf`, no `by`): a plain local. Assigning it in the dropdown changes nothing on screen, and the next recomposition returns the old value from `remember`. Compiles fine. `mutableStateOf` = observable box, `remember` = keep the box, `by` = use it like a variable.
+- Stray backtick inside the word "current" in a `QueueScreen` comment.
+
+### Known issues / next steps
+- The "Close" button in the notification clears the queue but leaves `activeSource` in prefs. Harmless: the list looks active, and a tap still starts `playQueue` because the track isn't in `queueIds`.
+
+---
+
+## 2026-11-28 — Settings screen, Appearance moved there
+
+### Added: `SettingsScreen.kt`
+- **Not a tab but a screen over the tab content**, like `PlaylistDetailScreen`. `AppScaffold` has `var showSettings by remember { mutableStateOf(false) }`; inside `Box`: `if (showSettings) SettingsScreen(onBack = { showSettings = false }, themeSettings = themeSettings) else when (currentTab) { ... }`. `if` is an expression, so `else when` reads naturally.
+- Closed three ways: back arrow, system back (`BackHandler(onBack = onBack)` at the top of the screen), tapping any tab (`onClick = { currentTab = tab; showSettings = false }`, `;` separates two statements on one line).
+- `SettingsScreen(onBack, themeSettings, modifier = Modifier)`: required parameters first, `modifier` as the first optional one (Compose convention); `modifier` goes only on the outer element.
+- Layout: `Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()))` → header `Row` (`IconButton` with `ic_arrow_back` + `Text("Settings", titleLarge)`) → sections. Not `LazyColumn`: a few sections don't need lazy loading, and each would need `item { }`.
+- **`SettingsSection(title, content: @Composable ColumnScope.() -> Unit)`:** colored `titleSmall` title + a slot. `ColumnScope.()` is a receiver lambda: inside the block `this` is the column's scope, so `weight` / `align` work as if written inside `Column`. Called as `SettingsSection("Appearance") { AppearanceSettings(themeSettings) }` (trailing lambda).
+
+### Added: gear on the Queue tab
+- `QueueScreen(..., onSettingsClick: () -> Unit)`; `IconButton(onClick = onSettingsClick) { Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings") }` first in the buttons row. `AppScaffold` passes `onSettingsClick = { showSettings = true }` — the screen only reports the tap ("events go up").
+- `ic_settings.xml` added via Vector Asset.
+
+### Changed: `ThemePickerScreen` → `AppearanceSettings` (`ui/theme/AppearanceSettings.kt`)
+- Renamed with Refactor → Rename, so the call and the import were updated and git sees a rename.
+- Now section content, not a screen: outer `padding(16.dp)` → `padding(horizontal = 16.dp)` (vertical spacing and the title come from `SettingsSection`; horizontal matches the section title).
+- "Get" tab shows `Placeholder("Get")` again; the "temporary" TODO is gone.
+
+### Bugs fixed during development
+- **`SettingsScreen{}`:** an empty trailing lambda passed as `onBack`. Together with `BackHandler` it would swallow the system back: neither close the screen nor leave the app.
+- **New required parameter `onSettingsClick` not passed** at the `QueueScreen(...)` call → "No value passed for parameter". A parameter without a default must be passed everywhere.
+- **`Icon(painterResource(...),)` without `contentDescription`:** it has no default on purpose; `null` only for decorative icons.
+- **Gear icon on the back button** of the settings screen (copied from the Queue button).
+- **`AM` in `git status`:** the file was staged earlier and changed after; without another `git add` the old version would be committed.
+
+### Known issues / next steps
+- Settings stages left: **Backup** (export/import buttons move from `PlaylistsScreen`, launchers stay in `AppScaffold`), **About** (`buildFeatures { buildConfig = true }`, `BuildConfig.VERSION_NAME`, `versionName` is still `"1.0"` while the tag is `v0.1.0`, repository link via `LocalUriHandler.current.openUri(...)`), **Library** statistics (tracks total / after the folder filter, folders, total duration with a new `formatTotalDuration`, playlists, favorites).
+- The gear is only on the Queue tab, and the top row there is getting crowded; Shuffle/Repeat could become icons (`ic_shuffle_on`, `ic_repeat_on` already exist).
+- Subheadings "Theme"/"Mode" use `titleMedium`, larger than the section title (`titleSmall`); `labelLarge` if it looks off.
+- Listening statistics (hours, most played) need a new table and events from the service — moved to IDEAS.md next to achievements.

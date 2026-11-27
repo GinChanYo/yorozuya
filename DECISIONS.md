@@ -79,6 +79,17 @@ ExoPlayer's built-in shuffle changes only the play order, not the queue, so the 
 
 A dropdown at the top picks "All songs", Favorites or a playlist. The list that is playing (`QueueSource`, remembered in `PlayerState`) shows the real, possibly shuffled, queue; any other list shows its own order and is dimmed. Tapping a track in the playing list jumps to it inside the queue instead of restarting the list, so the shuffled order is kept.
 
+* **The playing list survives a restart.** `activeSource` is saved by `PlayerState` in its own prefs file `ui_state` (as `"library"` / `"favorites"` / `"playlist:<id>"`), not by the service: it is set only in `playQueue` on the UI side, and passing it to the service would need extras or a custom command. The dropdown starts at the saved list.
+* **Deleted playlist → "All songs".** Deleting is done in one place (`onDelete`; backup import never deletes), so the fallback lives there instead of watching the playlist list: the dropdown goes to "All songs" and a saved `activeSource` for that playlist is forgotten. The music keeps playing; the queue then belongs to no list.
+
+### Settings: a screen over the tabs, not a tab
+
+Opened by the gear on the Queue tab (`showSettings` flag in `AppScaffold`), closed by the back arrow, system back or any tab. A sixth tab would crowd the navigation bar for something opened rarely. Sections (`SettingsSection(title) { content }`) in a scrolling `Column` — a few sections don't need `LazyColumn`.
+
+Planned sections: Appearance (done), Backup (export/import move here: they save favorites and playlists together, a whole-app operation, not part of the Lists tab), Library, About.
+
+**Statistics split in two.** Library statistics (tracks, folders, total duration, playlists, favorites) are computed from what is already loaded — a Settings section. Listening statistics (hours listened, most played) need a new table and events written by the service on every track change; they are separate work and the base for achievements (IDEAS.md).
+
 ### GPLv3
 
 A consequence of using certain libraries. Matches the desired outcome: open source, forks allowed, but must remain open.
@@ -133,12 +144,13 @@ From "Postponed" and IDEAS.md:
 
 Not in any list:
 
-* Theme system: wallpaper or seed palettes, light/dark/system, AMOLED (temporary picker on the "Get" tab until a Settings screen exists)
+* Theme system: wallpaper or seed palettes, light/dark/system, AMOLED (in Settings → Appearance)
 * Custom fonts (see "Typography")
 * Mini player on every tab, tap opens "Now"; auto-centering on the playing track in playlists too
 * Vector icons instead of emoji in player controls
 * Shuffle that reorders the visible queue, original order restored on "off" and after a restart (see "Shuffle reorders the real queue")
-* Queue tab dropdown: All songs / Favorites / playlists, playing list shows the real queue, others dimmed (see "Queue tab: one list at a time")
+* Queue tab dropdown: All songs / Favorites / playlists, playing list shows the real queue, others dimmed, the playing list remembered after a restart (see "Queue tab: one list at a time")
+* Settings screen over the tabs, Appearance section (see "Settings: a screen over the tabs")
 
 ## Version 0.3 — synchronized lyrics
 
@@ -153,4 +165,4 @@ Not in any list:
 ## Postponed
 
 * YouTube downloading (0.5) — "Get" tab stays a placeholder until then
-* Settings screen — theme picker and backup buttons move there
+* Settings screen — ✅ screen and Appearance; backup buttons, Library statistics and About still to move/add

@@ -57,7 +57,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `for (x in list) { }` | Plain loop (`foreach`); clearer than `map` when the body changes counters. |
 | `try { } catch (e: A) { } catch (e: B) { }` | Checked top to bottom: the more specific type goes first. |
 | Lambda `{ x -> ... }` | Anonymous function; single param can be `it`. |
-| Trailing lambda `f(a) { ... }` | Last lambda parameter goes outside `()`. |
+| Trailing lambda `f(a) { ... }` | Last lambda parameter goes outside `()`. `Screen{}` = an empty lambda passed as that parameter — compiles, does nothing. |
+| `a = 1; b = 2` | `;` separates statements on one line (otherwise not needed). |
 | Lambda with receiver | Inside `Row { }`, `this` is `RowScope` → `Modifier.weight` available. |
 | Function types `() -> Unit`, `(Float) -> Unit` | Like `Action`, `Action<float>`. A lambda can be stored in a `val` and passed down: `val showMessage: (String) -> Unit = { ... }`. |
 | Nullable function type `((Track) -> Unit)? = null` | Optional callback; check `!= null` before calling. |
@@ -65,7 +66,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `if (f != null) { { f(x) } } else null` | Outer `{ }` = `if` branch, inner `{ }` = lambda: wraps "call `f` with `x`" into `() -> Unit`. |
 | Expression body `fun f(): Boolean = a != b` | `=` instead of `{ }`: the expression is returned (C# `=>`). A `{ }` body needs `return`, otherwise it returns `Unit`. |
 | `"Removed \"${t.title}\""` | `\"` = quote inside a string, combined with a template. |
-| Function type with receiver `A.(String) -> Unit` | Function called *on* an `A` (inside it `this` is `A`), e.g. `RowScope.() -> Unit` of `Row { }`. |
+| Function type with receiver `A.(String) -> Unit` | Function called *on* an `A` (inside it `this` is `A`), e.g. `RowScope.() -> Unit` of `Row { }`. Own slot: `content: @Composable ColumnScope.() -> Unit`, called as `content()` inside a `Column`. |
+| Parameter without default | Must be passed at **every** call: "No value passed for parameter 'x'". |
 | `Unit` | "No value" type (`void`). |
 | `by` (delegation) | `var x by mutableStateOf(0)` — reads/writes go through the delegate's `getValue`/`setValue`. |
 | String templates `"$x"`, `"${a.b}"` | String interpolation (`$"{x}"`). |
@@ -181,6 +183,8 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `getSharedPreferences(name, MODE_PRIVATE)` | Open prefs file only our app can read. |
 | `prefs.getString/getInt/getLong/getBoolean/getStringSet(key, default)` | Read with default for missing key. |
 | `prefs.edit().putX(...).apply()` | Batch write, saved asynchronously (`commit()` blocks). |
+| `prefs.edit().remove(key).apply()` | Delete a key; `getX(key, default)` returns the default again. |
+| `Context.MODE_PRIVATE` | Outside an Activity/Service (e.g. in a composable) the constant needs the `Context.` prefix. |
 | `Manifest.permission.READ_MEDIA_AUDIO` | Runtime permission to read audio files. |
 | `ContextCompat.checkSelfPermission(...)` | Is the permission granted? Compare with `PackageManager.PERMISSION_GRANTED`. |
 | `ActivityResultContracts.RequestPermission()` | Contract for the system permission dialog. |
@@ -194,6 +198,9 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `colorResource(android.R.color.system_accent1_500)` | System wallpaper accent color (Android 12+). |
 | `@DrawableRes` | Marks an `Int` as a drawable id, so Android Studio flags wrong ids. |
 | Vector Asset | Android Studio: right-click `res` → New → Vector Asset, adds Material icons as XML. |
+| Refactor → Rename (Shift+F6) | Renames a function/file and updates every call and import; git sees a rename. |
+| Optimize Imports (Ctrl+Alt+O) | Removes unused (grey) imports. Alt+Enter on a red name adds a missing one. |
+| `git status` `AM` | Added to the index, then modified: `git add` again, or the old version is committed. |
 | `Build.VERSION.SDK_INT` | Android version of the device (theme uses it). |
 | `IOException` | I/O error (missing cover, unreadable file). |
 | `Handler(Looper.getMainLooper())` | Posts work to the main thread's message queue. `handler.post { }` runs the block a bit later, after the current work (e.g. listener dispatch) finishes (`Dispatcher.BeginInvoke`). |
@@ -211,7 +218,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `remember(key1, key2) { }` | Recompute when a key changes. |
 | `var copy by remember(src) { mutableStateOf(src) }` | Local editable copy of a parameter, reset whenever a new `src` arrives (e.g. list reordered while dragging, reset by the database). |
 | `mutableStateOf(x)` | Observable value; writing it triggers redraw of readers. |
-| `var x by remember { mutableStateOf(...) }` | Standard pattern for local UI state. |
+| `var x by remember { mutableStateOf(...) }` | Standard pattern for local UI state. `var x = remember { value }` without `mutableStateOf` is a plain local: assigning it doesn't redraw anything. |
 | `mutableStateOf<Track?>(null)` | Explicit type when the initial value is `null` (otherwise the type would be `Nothing?`). |
 | `mutableStateOf<QueueSource>(QueueSource.Library)` | Same for a sealed type: without `<QueueSource>` the type would be `Library` only and other variants couldn't be assigned. |
 | Composable calls only in composables | `remember` etc. can't be called inside `LaunchedEffect { }` (a coroutine) or `onClick` — "@Composable invocations can only happen from the context of a @Composable function". |
@@ -239,6 +246,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | Name | Meaning |
 |---|---|
 | `Column { }` | Children vertically. `horizontalAlignment`, `verticalArrangement`. |
+| `Modifier.verticalScroll(rememberScrollState())` | Makes a plain `Column` scroll (all children built at once); for a few items instead of `LazyColumn`. |
 | `Row { }` | Children horizontally. `verticalAlignment`, `horizontalArrangement`. |
 | `Box { }` | Children stacked on top of each other. `contentAlignment`. |
 | `Spacer(Modifier...)` | Empty gap. |
@@ -292,7 +300,7 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `FontFamily(Font(...), Font(...))` | One typeface in several variants; Compose picks a `Font` by weight + style. Different typefaces = different families. A variable font is listed once per weight. |
 | `TextStyle.copy(fontFamily = ...)` | Same style with one field changed (data class `copy`). |
 | `Image(bitmap, contentDescription, contentScale, modifier)` | Draw an `ImageBitmap`. `contentDescription = null` = decorative. |
-| `Icon(painter, contentDescription, tint)` | Small tinted icon (Material 3); color comes from the surrounding component unless `tint` is set, so the XML `android:tint` doesn't matter. `contentDescription` = what TalkBack reads. |
+| `Icon(painter, contentDescription, tint)` | Small tinted icon (Material 3); `contentDescription` has no default, must be passed (`null` = decorative); color comes from the surrounding component unless `tint` is set, so the XML `android:tint` doesn't matter. `contentDescription` = what TalkBack reads. |
 | `painterResource(R.drawable.x)` | Load a drawable resource (e.g. vector XML) as a `Painter`. |
 | `ContentScale.Crop` | Fill the box, trim overflow, keep proportions. |
 | `ImageBitmap`, `Bitmap.asImageBitmap()` | Compose bitmap type / conversion from Android `Bitmap`. |
@@ -427,11 +435,13 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | `TrackLoader.kt` | `loadTracks(context): List<Track>` | Query MediaStore for music. |
 | `Tabs.kt` | `enum class Tab(label, icon)` | `QUEUE`, `NOW_PLAYING`, `PLAYLISTS`, `STORAGE`, `DOWNLOADER`; icon = `R.drawable.ic_*`. |
 | `MainActivity.kt` | `MainActivity` | Entry point; `rememberThemeSettings()` + `YorozuyaTheme(theme, mode, amoled) { AppScaffold(themeSettings) }`. |
-| | `AppScaffold(themeSettings)` | Root UI: tabs, permission, `allTracks`, `player`, `listState` + auto-scroll effect (also for `detailListState`), `library`, filtered `tracks`, snackbar + `showMessage`, `favoriteIds`, `toggleFavorite(id)`, `actionTrack` + `TrackActionsDialog`, `playlists`, `countsById` / `favoritesCount` (only tracks in the library), `openedList`, `openedTracks`, `queueTracks` (real queue), `queueTabSource` + `queueSourceTracks` + `queueTabTracks` + `queueSources` (Queue tab dropdown), `importLauncher` / `exportLauncher`; `bottomBar` = mini player + `NavigationBar`. |
-| `QueueScreen.kt` | `QueueScreen(player, tracks, source, sources, onSourceChange, hasPermission, listState, showMessage, onTrackLongClick)` | Queue tab: list dropdown + shuffle/repeat buttons, the chosen list (real queue if it's playing, dimmed if not). Auto-scroll lives in `AppScaffold`. |
+| | `AppScaffold(themeSettings)` | Root UI: tabs, `showSettings` (settings screen instead of the tab), permission, `allTracks`, `player`, `listState` + auto-scroll effect (also for `detailListState`), `library`, filtered `tracks`, snackbar + `showMessage`, `favoriteIds`, `toggleFavorite(id)`, `actionTrack` + `TrackActionsDialog`, `playlists`, `countsById` / `favoritesCount` (only tracks in the library), `openedList`, `openedTracks`, `queueTracks` (real queue), `queueTabSource` + `queueSourceTracks` + `queueTabTracks` + `queueSources` (Queue tab dropdown), `importLauncher` / `exportLauncher`; `bottomBar` = mini player + `NavigationBar`. |
+| `QueueScreen.kt` | `QueueScreen(player, tracks, source, sources, onSourceChange, hasPermission, listState, showMessage, onTrackLongClick, onSettingsClick)` | Queue tab: gear + list dropdown + shuffle/repeat buttons, the chosen list (real queue if it's playing, dimmed if not). Auto-scroll lives in `AppScaffold`. |
 | `QueueSource.kt` | `sealed interface QueueSource { Library, Favorites, Playlist(id) }` | Which list the queue was started from / is picked in the Queue dropdown. |
-| `FavoriteScreen.kt` | `FavoriteScreen(player, tracks, listState)` | Old favorites list, no longer used (replaced by `PlaylistDetailScreen`). |
-| | `Placeholder(name)` | Stub screen for unfinished tabs. |
+| | `QueueSource.toPrefString()`, `queueSourceFromPrefString(text)` | `"library"` / `"favorites"` / `"playlist:42"` for prefs; `null` for broken text. |
+| `MainActivity.kt` | `Placeholder(name)` | Stub screen for unfinished tabs ("Get"). |
+| `SettingsScreen.kt` | `SettingsScreen(onBack, themeSettings, modifier)` | Settings over the tab content: back arrow + title, scrolling sections, `BackHandler`. |
+| | `SettingsSection(title) { content }` | One section: colored title + `ColumnScope` slot. |
 | `TrackList.kt` | `TrackList(tracks, currentTrackId, isPlaying, listState, onTrackClick, onTrackLongClick?, bottomPadding)` | Scrollable track list; `bottomPadding` is unused now. |
 | | `TrackRow(track, isCurrent, isPlaying, onClick, onLongClick?, dragHandle?)` | One row: cover + title/artist (+ optional drag handle at the end); tap + long press. |
 | | `LazyListState.centerOn(index, animate)` | Scroll so the item is centered; no-op if fully visible. Used for Queue and the opened playlist. |
@@ -448,9 +458,10 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | | `togglePath(path)`, `toggleSubfolders()` | Change the filter and save to prefs immediately. |
 | | `filter(tracks)` | Apply the filter to a track list. |
 | | `rememberLibraryFilter()` | Create once, keep across recompositions. |
-| `PlayerConnection.kt` | `class PlayerState` | UI-side playback state: `controller`, `currentTrackId`, `isPlaying`, `shuffleEnabled`, `repeatMode`, `position`, `duration`, `queueIds` (real queue order), `activeSource` (in memory only). |
+| `PlayerConnection.kt` | `class PlayerState(prefs)` | UI-side playback state: `controller`, `currentTrackId`, `isPlaying`, `shuffleEnabled`, `repeatMode`, `position`, `duration`, `queueIds` (real queue order), `activeSource` (loaded from / saved to prefs `ui_state`). |
 | | `syncFrom(p)` | Copy current state after connecting. |
-| | `playQueue(tracks, startIndex, source)` | Replace queue, play, remember `activeSource`. |
+| | `playQueue(tracks, startIndex, source)` | Replace queue, play, remember and save `activeSource`. |
+| | `forgetSource(source)` | If it's the active one: `activeSource = null` and its key removed (deleted playlist). |
 | | `playOrToggle(track, queue, source)` | List tap: same track + same source → pause/resume; same source → seek inside the queue; otherwise play the list from it. |
 | | `moveInQueue(oldOrder, from, to)` | Mirror a playlist drag onto the live queue, only if the queue is exactly that playlist. |
 | | `togglePlayPause()`, `next()`, `previous()`, `seekTo(ms)`, `toggleShuffle()`, `cycleRepeat()` | Controls. |
@@ -480,8 +491,9 @@ Sections: Kotlin language → Kotlin stdlib → Coroutines → Android platform 
 | | `restoreBackup(backup, favoriteDao, playlistDao, library): RestoreResult(matched, missing, playlists)` | Merge a backup in: favorites on top, same-named playlists extended at the end. |
 | `ui/theme/AppTheme.kt` | `enum AppTheme(label, seed?)`, `enum ThemeMode(label)` | Palettes (Wallpaper, Silver, Crimson, Forest) and light/dark/system. |
 | `ui/theme/ThemeSettings.kt` | `ThemeSettings(prefs)`: `theme`, `mode`, `amoled`, `updateTheme()`, `updateMode()`, `toggleAmoled()`; `rememberThemeSettings()` | Theme choice saved in prefs `theme`. |
-| `ui/theme/ThemePickerScreen.kt` | `ThemePickerScreen(settings)` | Theme/mode/AMOLED picker; temporarily on the "Get" tab. |
+| `ui/theme/AppearanceSettings.kt` | `AppearanceSettings(settings)` | Theme/mode/AMOLED picker; content of Settings → Appearance. |
 | `ui/theme/Type.kt` | `SpaceGroteskFamily`, `BogleFamily`, `JetBrainsMonoFamily`, `Typography` | Fonts: Bogle for display/headline, Space Grotesk for the rest, JetBrains Mono for time labels. |
 | Prefs `playback_state` | `queue`, `index`, `position`, `shuffle`, `repeat`, `original` (ids before shuffle, empty when off) | Written by `PlaybackService`. |
 | Prefs `library` | `paths` (string set), `subfolders` (bool) | Folder filter, read/written by `LibraryFilter`. |
 | Prefs `theme` | `theme`, `mode` (enum names), `amoled` (bool) | Written by `ThemeSettings`. |
+| Prefs `ui_state` | `active_source` (`QueueSource.toPrefString()`) | Written by `PlayerState`. |

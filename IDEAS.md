@@ -12,3 +12,4 @@
 10. Implement offline/online lyrics translation and save it locally if needed
 11. Implement Achievement system
 12. *Done in 0.2 (backup and restore of Favorites and playlists with their order, JSON file via the system file dialog) → DECISIONS.md*
+13. Listening statistics: hours listened, most played tracks/artists. Needs a new table and events from the service on every track change; the base for the achievement system (#11). Library statistics (already loaded data) go to Settings instead.
